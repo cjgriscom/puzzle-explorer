@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Puzzle Explorer</title>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: #dddddd;
+        }
+
+        #three-canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 0;
+            user-select: none;
+        }
+
+        #egui-canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 1;
+            user-select: none;
+        }
+    </style>
+</head>
+
+<body>
+    <canvas id="three-canvas"></canvas>
+    <canvas id="egui-canvas"></canvas>
+
+    <script type="module">
+        import init, { run_app } from './pkg/puzzle_explorer.js';
+
+        async function main() {
+            await init();
+            run_app("egui-canvas", "three-canvas");
+        }
+
+        main();
+    </script>
+</body>
+
+</html>
