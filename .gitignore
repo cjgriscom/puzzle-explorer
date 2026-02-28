@@ -1,0 +1,9 @@
+/target
+/pkg
+**/*.rs.bk
+**/*.swp
+**/*.DS_Store
+.vscode/
+node_modules/
+.idea/
+.env
