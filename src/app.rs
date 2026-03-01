@@ -6,6 +6,8 @@ use wasm_bindgen::prelude::*;
 use web_sys::{HtmlCanvasElement, MessageEvent, Worker, WorkerOptions, window};
 
 use crate::color::{ORBIT_COLORS, SINGLETON_COLOR, color_to_hex};
+use crate::dreadnaut::DreadnautManager;
+use crate::gap::{GapManager, GapState};
 use crate::geometry::{self, DISP_R, R, TAU};
 use crate::gui::PuzzleParams;
 use crate::puzzle::{GeometryParams, GeometryResult, OrbitParams, OrbitResult, PolyLine};
@@ -330,7 +332,17 @@ pub struct PuzzleApp {
     _on_error: Option<Closure<dyn FnMut(MessageEvent)>>,
 
     // Dreadnaut worker
-    dreadnaut_data: crate::dreadnaut::DreadnautManager,
+    dreadnaut_data: DreadnautManager,
+
+    // GAP worker
+    gap_manager: GapManager,
+    gap_input: String,
+
+    request_counter: usize,
+    pending_dreadnaut_requests: std::collections::HashMap<usize, usize>, // req_id -> orbit_index
+    pending_gap_requests: std::collections::HashMap<usize, usize>,       // req_id -> orbit_index
+    orbit_dreadnaut: std::collections::HashMap<usize, String>,
+    orbit_gap: std::collections::HashMap<usize, String>,
 }
 
 impl PuzzleApp {
@@ -355,11 +367,20 @@ impl PuzzleApp {
             _on_message: None,
             _on_error: None,
 
-            dreadnaut_data: crate::dreadnaut::DreadnautManager::new(),
+            dreadnaut_data: DreadnautManager::new(),
+            gap_manager: GapManager::new(),
+            gap_input: String::new(),
+
+            request_counter: 0,
+            pending_dreadnaut_requests: std::collections::HashMap::new(),
+            pending_gap_requests: std::collections::HashMap::new(),
+            orbit_dreadnaut: std::collections::HashMap::new(),
+            orbit_gap: std::collections::HashMap::new(),
         };
 
         app.init_worker();
         app.dreadnaut_data.init(cc.egui_ctx.clone());
+        app.gap_manager.init(cc.egui_ctx.clone());
         app.spawn_geometry_worker();
         app
     }
@@ -629,6 +650,16 @@ impl eframe::App for PuzzleApp {
                         three.update_geometry(&data);
                     }
                     self.stored_geometry = Some(data);
+
+                    // TODO needed?
+                    self.orbit_dreadnaut.clear();
+                    self.orbit_gap.clear();
+                    self.dreadnaut_data.clear_queue();
+                    self.gap_manager.clear_queue();
+                    self.pending_dreadnaut_requests.clear();
+                    self.pending_gap_requests.clear();
+
+                    self.orbit_result = None;
                 }
                 WorkerResponse::OrbitsComputed(data) => {
                     *self.compute_output.borrow_mut() =
@@ -636,7 +667,26 @@ impl eframe::App for PuzzleApp {
                     if let Some(three) = &self.three {
                         three.update_face_dots(&data);
                     }
-                    self.dreadnaut_data.recompute_all(&data);
+                    self.orbit_dreadnaut.clear();
+                    self.orbit_gap.clear();
+                    self.pending_dreadnaut_requests.clear();
+                    self.pending_gap_requests.clear();
+
+                    let mut dreadnaut_batch = Vec::new();
+                    for (oi, gens) in data.generators.iter().enumerate() {
+                        let n_vertices =
+                            data.face_orbit_indices.iter().filter(|&&i| i == oi).count();
+                        if n_vertices > 1 && !gens.is_empty() {
+                            self.request_counter += 1;
+                            let req_id = self.request_counter;
+                            self.pending_dreadnaut_requests.insert(req_id, oi);
+
+                            let script = DreadnautManager::construct_script(gens, n_vertices);
+                            dreadnaut_batch.push((req_id, script));
+                        }
+                    }
+                    self.dreadnaut_data.enqueue_batch(dreadnaut_batch);
+
                     self.orbit_result = Some(data);
                 }
                 WorkerResponse::Error(e) => {
@@ -651,6 +701,21 @@ impl eframe::App for PuzzleApp {
 
         // -- Check dreadnaut worker results ---
         self.dreadnaut_data.process_responses();
+        self.gap_manager.process_responses();
+
+        for (req_id, res) in self.dreadnaut_data.completed_jobs.drain(..) {
+            if let Some(&oi) = self.pending_dreadnaut_requests.get(&req_id) {
+                self.orbit_dreadnaut.insert(oi, res);
+                self.pending_dreadnaut_requests.remove(&req_id);
+            }
+        }
+
+        for (req_id, res) in self.gap_manager.completed_jobs.drain(..) {
+            if let Some(&oi) = self.pending_gap_requests.get(&req_id) {
+                self.orbit_gap.insert(oi, res);
+                self.pending_gap_requests.remove(&req_id);
+            }
+        }
 
         // -- Controls Window ---
         let buttons_enabled = self.anim.is_none();
@@ -782,6 +847,34 @@ impl eframe::App for PuzzleApp {
                     {
                         self.spawn_orbit_worker();
                     }
+                    if ui
+                        .add_enabled(
+                            buttons_enabled && self.orbit_result.is_some(),
+                            egui::Button::new("Compute Groups"),
+                        )
+                        .clicked()
+                        && let Some(orbit) = &self.orbit_result
+                    {
+                        self.gap_manager.clear_queue();
+                        self.orbit_gap.clear();
+                        self.pending_gap_requests.clear();
+
+                        for oi in 0..orbit.orbit_count {
+                            let members_count = orbit
+                                .face_orbit_indices
+                                .iter()
+                                .filter(|&&o| o == oi)
+                                .count();
+                            if members_count > 1 {
+                                self.request_counter += 1;
+                                let req_id = self.request_counter;
+                                self.pending_gap_requests.insert(req_id, oi);
+
+                                let cmd = GapManager::construct_group_cmd(&orbit.generators[oi]);
+                                self.gap_manager.send_queued_command(req_id, &cmd);
+                            }
+                        }
+                    }
                 });
 
                 ui.separator();
@@ -863,14 +956,62 @@ impl eframe::App for PuzzleApp {
 
                                     lines.push(format!("  GAP: Group([{}])", gap_parts.join(",")));
 
-                                    if let Some(hash) = self.dreadnaut_data.results.get(&oi) {
+                                    if let Some(hash) = self.orbit_dreadnaut.get(&oi) {
                                         lines.push(format!("  Canon Hash: {}", hash));
+                                    }
+                                    if let Some(struct_desc) = self.orbit_gap.get(&oi) {
+                                        lines.push(format!("  Structure: {}", struct_desc));
                                     }
                                 }
                             }
                             lines.push(format!("Total Orbits: {}", orbit.orbit_count));
                             ui.monospace(lines.join("\n"));
                         });
+                }
+            });
+
+        // GAP Window
+        egui::Window::new("GAP Interface")
+            .default_pos([400.0, 50.0])
+            .default_size([400.0, 300.0])
+            .show(ctx, |ui| {
+                match &self.gap_manager.state {
+                    GapState::NotStarted => {
+                        ui.label("GAP is not started.");
+                    }
+                    GapState::Loading(status, progress) => {
+                        ui.label(status);
+                        // Progress is currently just an arbitrary tracked value, but works.
+                        ui.add(egui::ProgressBar::new(*progress));
+                        ui.spinner();
+                    }
+                    GapState::Error(err) => {
+                        ui.label(format!("Error loading GAP: {}", err));
+                    }
+                    GapState::Ready => {
+                        egui::ScrollArea::vertical()
+                            .max_height(200.0)
+                            .stick_to_bottom(true)
+                            .show(ui, |ui| {
+                                ui.monospace(&self.gap_manager.output_history);
+                            });
+
+                        ui.horizontal(|ui| {
+                            ui.label("gap>");
+                            let response = ui.add(
+                                egui::TextEdit::singleline(&mut self.gap_input)
+                                    .desired_width(f32::INFINITY),
+                            );
+                            if response.lost_focus()
+                                && ui.input(|i| i.key_pressed(egui::Key::Enter))
+                            {
+                                let cmd = self.gap_input.clone();
+                                self.gap_input.clear();
+                                self.gap_manager.send_command(&cmd);
+                                response.request_focus();
+                            }
+                        });
+                    }
                 }
             });
 

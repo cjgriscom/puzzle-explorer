@@ -1,6 +1,4 @@
-use crate::puzzle::OrbitResult;
 use std::cell::RefCell;
-use std::collections::HashMap;
 use std::rc::Rc;
 use wasm_bindgen::JsCast;
 use wasm_bindgen::closure::Closure;
@@ -11,7 +9,7 @@ pub struct DreadnautManager {
     pub task_start_time: Option<f64>,
     pub is_computing: bool,
     pub queue: Vec<usize>,
-    pub results: HashMap<usize, String>,
+    pub completed_jobs: Vec<(usize, String)>,
     pub pending_responses: Rc<RefCell<Vec<String>>>,
     _on_message: Option<Closure<dyn FnMut(MessageEvent)>>,
     _on_error: Option<Closure<dyn FnMut(MessageEvent)>>,
@@ -24,7 +22,7 @@ impl DreadnautManager {
             task_start_time: None,
             is_computing: false,
             queue: Vec::new(),
-            results: HashMap::new(),
+            completed_jobs: Vec::new(),
             pending_responses: Rc::new(RefCell::new(Vec::new())),
             _on_message: None,
             _on_error: None,
@@ -132,24 +130,19 @@ impl DreadnautManager {
         script
     }
 
-    pub fn recompute_all(&mut self, orbit: &OrbitResult) {
+    pub fn clear_queue(&mut self) {
         self.queue.clear();
-        self.results.clear();
+        self.completed_jobs.clear();
         self.pending_responses.borrow_mut().clear();
+    }
 
+    pub fn enqueue_batch(&mut self, jobs: Vec<(usize, String)>) {
+        // Enqueue a batch of scripts with unique IDs
         let mut full_script = String::new();
 
-        for (oi, gens) in orbit.generators.iter().enumerate() {
-            let n_vertices = orbit
-                .face_orbit_indices
-                .iter()
-                .filter(|&&i| i == oi)
-                .count();
-            if n_vertices > 1 && !gens.is_empty() {
-                let script = Self::construct_script(gens, n_vertices);
-                full_script.push_str(&script);
-                self.queue.push(oi);
-            }
+        for (request_id, script) in jobs {
+            full_script.push_str(&script);
+            self.queue.push(request_id);
         }
 
         if !full_script.is_empty()
@@ -173,8 +166,8 @@ impl DreadnautManager {
         if !new_responses.is_empty() {
             for res in new_responses {
                 if !self.queue.is_empty() {
-                    let orbit_idx = self.queue.remove(0);
-                    self.results.insert(orbit_idx, res);
+                    let request_id = self.queue.remove(0);
+                    self.completed_jobs.push((request_id, res));
                 }
             }
             if self.queue.is_empty() {
