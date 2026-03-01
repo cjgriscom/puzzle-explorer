@@ -9,7 +9,7 @@ use crate::color::{ORBIT_COLORS, SINGLETON_COLOR, color_to_hex};
 use crate::dreadnaut::DreadnautManager;
 use crate::gap::{GapManager, GapState};
 use crate::geometry::{self, DISP_R, R, TAU};
-use crate::gui::PuzzleParams;
+use crate::gui::{OrbitAnalysisState, PuzzleParams, toggle};
 use crate::puzzle::{GeometryParams, GeometryResult, OrbitParams, OrbitResult, PolyLine};
 use crate::three::{
     BufferAttribute, BufferGeometry, Group, Line, LineBasicMaterial, LineLoop, Mesh,
@@ -316,6 +316,7 @@ fn lerp_normalize(a: &[f32; 3], b: &[f32; 3], t: f32) -> [f32; 3] {
 
 pub struct PuzzleApp {
     params: PuzzleParams,
+    orbit_state: OrbitAnalysisState,
     three: Option<ThreeState>,
     worker: Option<Worker>,
     task_start_time: Option<f64>,
@@ -352,6 +353,7 @@ impl PuzzleApp {
 
         let mut app = Self {
             params: PuzzleParams::default(),
+            orbit_state: OrbitAnalysisState::default(),
             three,
             worker: None,
             task_start_time: None,
@@ -651,7 +653,10 @@ impl eframe::App for PuzzleApp {
                     }
                     self.stored_geometry = Some(data);
 
-                    // TODO needed?
+                    self.orbit_state.orbits_stale = true;
+                    if self.orbit_state.auto_update_orbits {
+                        self.spawn_orbit_worker();
+                    }
                     self.orbit_dreadnaut.clear();
                     self.orbit_gap.clear();
                     self.dreadnaut_data.clear_queue();
@@ -688,6 +693,31 @@ impl eframe::App for PuzzleApp {
                     self.dreadnaut_data.enqueue_batch(dreadnaut_batch);
 
                     self.orbit_result = Some(data);
+
+                    self.orbit_state.orbits_stale = false;
+                    self.orbit_state.groups_stale = true;
+                    if self.orbit_state.auto_update_groups {
+                        let orbit = self.orbit_result.clone().unwrap();
+                        self.gap_manager.clear_queue();
+                        self.orbit_gap.clear();
+                        self.pending_gap_requests.clear();
+
+                        for oi in 0..orbit.orbit_count {
+                            let members_count = orbit
+                                .face_orbit_indices
+                                .iter()
+                                .filter(|&&o| o == oi)
+                                .count();
+                            if members_count > 1 {
+                                self.request_counter += 1;
+                                let req_id = self.request_counter;
+                                self.pending_gap_requests.insert(req_id, oi);
+
+                                let cmd = GapManager::construct_group_cmd(&orbit.generators[oi]);
+                                self.gap_manager.send_queued_command(req_id, &cmd);
+                            }
+                        }
+                    }
                 }
                 WorkerResponse::Error(e) => {
                     *self.compute_output.borrow_mut() = format!("Error: {}", e);
@@ -715,6 +745,10 @@ impl eframe::App for PuzzleApp {
                 self.orbit_gap.insert(oi, res);
                 self.pending_gap_requests.remove(&req_id);
             }
+        }
+
+        if self.pending_gap_requests.is_empty() {
+            self.orbit_state.groups_stale = false;
         }
 
         // -- Controls Window ---
@@ -783,14 +817,6 @@ impl eframe::App for PuzzleApp {
                     changed = true;
                 }
 
-                if ui
-                    .checkbox(&mut self.params.show_pieces, "Annotate pieces")
-                    .changed()
-                    && let Some(three) = &self.three
-                {
-                    three.face_group.set_visible(self.params.show_pieces);
-                }
-
                 ui.separator();
 
                 ui.label(format!("Cut A: {:.1}\u{00B0}", self.params.colat_a));
@@ -839,18 +865,65 @@ impl eframe::App for PuzzleApp {
                         }
                     });
                 });
+            });
+
+        // Orbit Analysis Window
+        egui::Window::new("Orbit Analysis")
+            .default_pos([50.0, 450.0])
+            .default_size([400.0, 400.0])
+            .show(ctx, |ui| {
+                ui.horizontal(|ui| {
+                    if ui
+                        .add(toggle(&mut self.orbit_state.annotate_pieces))
+                        .changed()
+                        && let Some(three) = &self.three
+                    {
+                        three
+                            .face_group
+                            .set_visible(self.orbit_state.annotate_pieces);
+                    }
+                    ui.label("Annotate pieces");
+                });
 
                 ui.horizontal(|ui| {
                     if ui
-                        .add_enabled(buttons_enabled, egui::Button::new("Compute Orbits"))
+                        .add(toggle(&mut self.orbit_state.auto_update_orbits))
+                        .changed()
+                        && self.orbit_state.auto_update_orbits
+                        && self.orbit_state.orbits_stale
+                    {
+                        self.spawn_orbit_worker();
+                    }
+                    ui.label("Automatically Update Orbits");
+                });
+
+                ui.horizontal(|ui| {
+                    ui.add(toggle(&mut self.orbit_state.auto_update_groups));
+                    ui.label("Automatically Update Groups");
+                });
+
+                ui.separator();
+
+                ui.horizontal(|ui| {
+                    if ui
+                        .add_enabled(
+                            buttons_enabled
+                                && (!self.orbit_state.auto_update_orbits
+                                    || self.orbit_state.orbits_stale),
+                            egui::Button::new("Recompute Orbits"),
+                        )
                         .clicked()
                     {
                         self.spawn_orbit_worker();
                     }
+
                     if ui
                         .add_enabled(
-                            buttons_enabled && self.orbit_result.is_some(),
-                            egui::Button::new("Compute Groups"),
+                            buttons_enabled
+                                && self.orbit_result.is_some()
+                                && (!self.orbit_state.auto_update_groups
+                                    || self.orbit_state.groups_stale),
+                            egui::Button::new("Recompute Groups"),
                         )
                         .clicked()
                         && let Some(orbit) = &self.orbit_result
@@ -877,95 +950,77 @@ impl eframe::App for PuzzleApp {
                     }
                 });
 
-                ui.separator();
-
-                if self.is_computing {
-                    ui.horizontal(|ui| {
-                        ui.spinner();
-                        ui.label("Computing...");
-                    });
-                } else {
-                    ui.label(format!("Status: {}", self.compute_output.borrow()));
-                }
-
-                // Show orbit GAP text if available
+                // Show orbit tree
                 if let Some(orbit) = &self.orbit_result {
                     ui.separator();
                     egui::ScrollArea::vertical()
-                        .max_height(200.0)
+                        .max_height(350.0)
                         .show(ui, |ui| {
-                            let mut lines = Vec::new();
-                            lines.push("=== Orbit Analysis ===".to_string());
-                            lines.push(format!("Pieces={}", orbit.face_count));
+                            ui.label(format!("Pieces: {}", orbit.face_count));
+                            ui.label(format!("Total Orbits: {}", orbit.orbit_count));
 
-                            let mut color_idx = 0;
-                            for oi in 0..orbit.orbit_count {
-                                let members: Vec<usize> = orbit
-                                    .face_orbit_indices
-                                    .iter()
-                                    .enumerate()
-                                    .filter(|&(_, &o)| o == oi)
-                                    .map(|(i, _)| i + 1)
-                                    .collect();
+                            let mut orbits_with_members: Vec<(usize, Vec<usize>)> = (0..orbit
+                                .orbit_count)
+                                .map(|oi| {
+                                    (
+                                        oi,
+                                        orbit
+                                            .face_orbit_indices
+                                            .iter()
+                                            .enumerate()
+                                            .filter(|&(_, &o)| o == oi)
+                                            .map(|(i, _)| i + 1)
+                                            .collect::<Vec<usize>>(),
+                                    )
+                                })
+                                .filter(|(_, members)| members.len() > 1)
+                                .collect();
 
-                                if members.len() == 1 {
-                                    lines.push(format!(
-                                        "Set {} {}: [{}] (singleton)",
-                                        oi + 1,
-                                        crate::color::SINGLETON_COLOR.0,
-                                        members[0]
-                                    ));
-                                } else {
-                                    let color = crate::color::ORBIT_COLORS
-                                        [color_idx % crate::color::ORBIT_COLORS.len()]
-                                    .0;
-                                    color_idx += 1;
-                                    let members_str = members
-                                        .iter()
-                                        .map(|x| x.to_string())
-                                        .collect::<Vec<_>>()
-                                        .join(", ");
-                                    lines.push(format!(
-                                        "Set {} {}: [{}]",
-                                        oi + 1,
-                                        color,
-                                        members_str
-                                    ));
+                            orbits_with_members
+                                .sort_by_key(|(_, members)| -(members.len() as isize));
 
-                                    let current_generators = &orbit.generators[oi];
-                                    let mut gap_parts = Vec::new();
-                                    for generator in current_generators {
-                                        if generator.is_empty() {
-                                            gap_parts.push("()".to_string());
+                            for (color_idx, (oi, members)) in orbits_with_members.iter().enumerate()
+                            {
+                                let c = crate::color::ORBIT_COLORS
+                                    [color_idx % crate::color::ORBIT_COLORS.len()];
+                                let rgb = c.1;
+                                let color_name = c.0;
+
+                                let header_text =
+                                    format!("     {}: {} pieces", color_name, members.len());
+
+                                // Draw circle in header
+                                let collapsing_resp = egui::CollapsingHeader::new(header_text)
+                                    .id_salt(format!("orbit_header_{}", oi))
+                                    .default_open(true)
+                                    .show(ui, |ui| {
+                                        if let Some(hash) = self.orbit_dreadnaut.get(&oi) {
+                                            ui.label(format!("Canon Hash: {}", hash));
                                         } else {
-                                            let cycle_str = generator
-                                                .iter()
-                                                .map(|cycle| {
-                                                    let c_str = cycle
-                                                        .iter()
-                                                        .map(|&idx| members[idx].to_string())
-                                                        .collect::<Vec<_>>()
-                                                        .join(",");
-                                                    format!("({})", c_str)
-                                                })
-                                                .collect::<Vec<_>>()
-                                                .join("");
-                                            gap_parts.push(cycle_str);
+                                            ui.label("Canon Hash: Computing...");
                                         }
-                                    }
 
-                                    lines.push(format!("  GAP: Group([{}])", gap_parts.join(",")));
+                                        if let Some(struct_desc) = self.orbit_gap.get(&oi) {
+                                            ui.label(format!("Structure: {}", struct_desc));
+                                        } else {
+                                            ui.label("Structure: Computing...");
+                                        }
+                                    });
 
-                                    if let Some(hash) = self.orbit_dreadnaut.get(&oi) {
-                                        lines.push(format!("  Canon Hash: {}", hash));
-                                    }
-                                    if let Some(struct_desc) = self.orbit_gap.get(&oi) {
-                                        lines.push(format!("  Structure: {}", struct_desc));
-                                    }
-                                }
+                                // Draw circle on the header rect
+                                let circle_center =
+                                    collapsing_resp.header_response.rect.left_center()
+                                        + egui::vec2(24.0, 0.0);
+                                ui.painter().circle_filled(
+                                    circle_center,
+                                    5.0,
+                                    egui::Color32::from_rgb(
+                                        (rgb[0] * 255.0) as u8,
+                                        (rgb[1] * 255.0) as u8,
+                                        (rgb[2] * 255.0) as u8,
+                                    ),
+                                );
                             }
-                            lines.push(format!("Total Orbits: {}", orbit.orbit_count));
-                            ui.monospace(lines.join("\n"));
                         });
                 }
             });
