@@ -2,7 +2,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use wasm_bindgen::JsCast;
 use wasm_bindgen::closure::Closure;
-use web_sys::{MessageEvent, Worker, WorkerOptions, window};
+use web_sys::{MessageEvent, Worker, WorkerOptions};
 
 pub struct DreadnautManager {
     pub worker: Option<Worker>,
@@ -136,7 +136,7 @@ impl DreadnautManager {
             js_sys::Reflect::set(&msg, &"data".into(), &full_script.into()).unwrap();
             let _ = w.post_message(&msg);
             self.is_computing = true;
-            self.task_start_time = Some(window().unwrap().performance().unwrap().now());
+            self.task_start_time = Some(crate::time::now());
         }
     }
 

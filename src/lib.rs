@@ -8,6 +8,7 @@ mod geometry;
 mod gui;
 mod puzzle;
 mod three;
+mod time;
 mod worker;
 
 pub use app::PuzzleApp;
@@ -20,6 +21,7 @@ use web_sys::{Event, HtmlCanvasElement};
 /// Entry point for the web application.
 ///
 /// Initializes the Egui app and binds it to the specified canvas ID.
+#[cfg(target_arch = "wasm32")]
 #[wasm_bindgen]
 pub async fn run_app(egui_canvas_id: String, three_canvas_id: String) -> Result<(), JsValue> {
     console_error_panic_hook::set_once();

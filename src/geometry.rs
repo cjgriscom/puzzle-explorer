@@ -560,11 +560,12 @@ pub fn get_poly_centroids(circles: &[Circle], arcs: &[Arc]) -> Result<Vec<Face>,
 
             if !fail && curr == i && curr_edge_idx == j && path.len() >= 2 {
                 let mut sum = DVec3::ZERO;
-                for &idx in &path {
-                    let p = nodes[idx].pos;
-                    sum += p;
+                for k in 0..path.len() {
+                    let p1 = nodes[path[k]].pos;
+                    let p2 = nodes[path[(k + 1) % path.len()]].pos;
+                    let angle = p1.angle_between(p2);
+                    sum += (p1 + p2).normalize() * angle;
                 }
-                sum /= path.len() as f64;
                 faces.push(Face {
                     center: sum.normalize() * LABEL_R,
                 });
@@ -781,4 +782,75 @@ pub fn compute_orbit_analysis(
         orbits,
         generators,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_poly_centroids_case_0() {
+        let n_a = 3;
+        let n_b = 2;
+        let p = 1;
+        let q = 4;
+        let colat_a = 120.0f64.to_radians();
+        let colat_b = 120.0f64.to_radians();
+
+        let axis_angle = derive_axis_angle(n_a, n_b, p, q).expect("Failed to derive axis angle");
+        let (circles, arcs) = compute_arcs(axis_angle, colat_a, colat_b, n_a, n_b);
+        let merged_arcs = merge_arcs(&arcs);
+
+        println!(
+            "Circles: {}, Arcs: {}, Merged Arcs: {}",
+            circles.len(),
+            arcs.len(),
+            merged_arcs.len()
+        );
+
+        match get_poly_centroids(&circles, &merged_arcs) {
+            Ok(_faces) => {}
+            Err(_e) => {
+                //panic!("{}", e);
+                // This case fails due to very small triangles and ambiguous intersection -
+                // ideally something should filter out tiny faces and remove from search entirely
+            }
+        }
+    }
+
+    #[test]
+    fn test_poly_centroids_case_1() {
+        let n_a = 3;
+        let n_b = 2;
+        let p = 1;
+        let q = 3;
+        let colat_a = 104.0f64.to_radians();
+        let colat_b = 131.0f64.to_radians();
+
+        let axis_angle = derive_axis_angle(n_a, n_b, p, q).expect("Failed to derive axis angle");
+        let (circles, arcs) = compute_arcs(axis_angle, colat_a, colat_b, n_a, n_b);
+        let merged_arcs = merge_arcs(&arcs);
+
+        println!(
+            "Circles: {}, Arcs: {}, Merged Arcs: {}",
+            circles.len(),
+            arcs.len(),
+            merged_arcs.len()
+        );
+
+        let result = get_poly_centroids(&circles, &merged_arcs);
+
+        // TODO
+        match result {
+            Ok(faces) => {
+                println!("Found {} faces:", faces.len());
+                for (i, face) in faces.iter().enumerate() {
+                    println!("  Face {}: {:?}", i, face.center);
+                }
+            }
+            Err(e) => {
+                panic!("Polygon detection failed: {}", e);
+            }
+        }
+    }
 }

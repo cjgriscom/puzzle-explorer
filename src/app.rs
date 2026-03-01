@@ -460,7 +460,7 @@ impl PuzzleApp {
             && let Some(start) = self.task_start_time
         {
             // Use a small timeout to avoid spawning too many workers, which causes total app failure
-            if window().unwrap().performance().unwrap().now() - start > 200.0 {
+            if crate::time::now() - start > 200.0 {
                 *self.compute_output.borrow_mut() = "Timeout, restarting worker...".to_string();
                 self.terminate_and_restart_worker();
             } else {
@@ -475,7 +475,7 @@ impl PuzzleApp {
         {
             let _ = w.post_message(&val);
             self.is_computing = true;
-            self.task_start_time = Some(window().unwrap().performance().unwrap().now());
+            self.task_start_time = Some(crate::time::now());
             *self.compute_output.borrow_mut() = "Computing...".to_string();
         }
     }
@@ -543,7 +543,6 @@ impl PuzzleApp {
         } else {
             TAU / n as f64
         };
-        let cos_colat = colat.cos();
 
         let boundary_circle =
             geometry::make_circ(glam::DVec3::new(axis[0], axis[1], axis[2]), colat);
@@ -554,14 +553,14 @@ impl PuzzleApp {
         };
 
         let (static_grp, rot_grp) =
-            three.build_animation_groups(&stored.lines, axis, cos_colat, Some(&boundary_circle));
+            three.build_animation_groups(&stored.lines, axis, colat.cos(), Some(&boundary_circle));
 
         three.cut_group.set_visible(false);
         three.face_group.set_visible(false);
         three.group.add(&static_grp);
         three.group.add(&rot_grp);
 
-        let now = window().unwrap().performance().unwrap().now();
+        let now = crate::time::now();
         self.anim = Some(AnimState {
             axis,
             target_angle,
@@ -573,7 +572,7 @@ impl PuzzleApp {
     }
 
     fn update_animation(&mut self) {
-        let now = window().unwrap().performance().unwrap().now();
+        let now = crate::time::now();
         let finished = {
             let anim = match &self.anim {
                 Some(a) => a,
