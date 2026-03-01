@@ -37,12 +37,14 @@ const setupWorker = async () => {
 	await initWorkerEnv();
 	await MyModule({
 		print: (text) => {
-			if (!globalThis.accumulatedOut) globalThis.accumulatedOut = "";
-			globalThis.accumulatedOut += text + '\n';
+			if (globalThis.postWorkerMessage) {
+				globalThis.postWorkerMessage({ type: 'output', data: text + '\n' });
+			}
 		},
 		printErr: (text) => {
-			if (!globalThis.accumulatedOut) globalThis.accumulatedOut = "";
-			globalThis.accumulatedOut += text + '\n';
+			if (globalThis.postWorkerMessage) {
+				globalThis.postWorkerMessage({ type: 'output', data: text + '\n' });
+			}
 		},
 	});
 };

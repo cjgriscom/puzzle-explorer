@@ -76,16 +76,6 @@ impl DreadnautManager {
     pub fn construct_script(combined_gen: &[Vec<Vec<usize>>], n_vertices: usize) -> String {
         // Ported from DreadnautInterface.java in GroupExplorer
 
-        let mut all_two = true;
-        for generator in combined_gen {
-            for cycle in generator {
-                if cycle.len() != 2 {
-                    all_two = false;
-                }
-            }
-        }
-        let actual_directed = !all_two;
-
         let mut adj: Vec<std::collections::BTreeSet<usize>> =
             vec![std::collections::BTreeSet::new(); n_vertices];
         for generator in combined_gen {
@@ -97,20 +87,13 @@ impl DreadnautManager {
                     let u = cycle[i];
                     let v = cycle[(i + 1) % cycle.len()];
                     adj[u].insert(v);
-                    if !actual_directed {
-                        adj[v].insert(u);
-                    }
                 }
             }
         }
 
         let mut script = String::new();
         script.push_str("l=0\n-m\n");
-        if actual_directed {
-            script.push_str("Ad\nd\n");
-        } else {
-            script.push_str("At\n");
-        }
+        script.push_str("Ad\nd\n");
         script.push_str(&format!("n={} g\n", n_vertices));
         (0..n_vertices).for_each(|i| {
             script.push_str(&format!("{}:", i));
