@@ -79,9 +79,15 @@ pub fn worker_handle_msg(msg: JsValue) -> JsValue {
                         compute_arcs(axis_angle, colat_a, colat_b, params.n_a, params.n_b);
                     let arcs = merge_arcs(&arcs);
 
-                    let analysis = compute_orbit_analysis(
+                    let analysis = match compute_orbit_analysis(
                         &circles, &arcs, params.n_a, params.n_b, axis_angle, colat_a, colat_b,
-                    );
+                    ) {
+                        Ok(a) => a,
+                        Err(e) => {
+                            let r = WorkerResponse::Error(e);
+                            return serde_wasm_bindgen::to_value(&r).unwrap_or(JsValue::UNDEFINED);
+                        }
+                    };
 
                     let face_positions: Vec<[f32; 3]> = analysis
                         .face_positions

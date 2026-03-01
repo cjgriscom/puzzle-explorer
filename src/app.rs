@@ -960,13 +960,24 @@ impl eframe::App for PuzzleApp {
                     }
                 });
 
+                let err_msg = self.compute_output.borrow().clone();
+                if err_msg.starts_with("Error:") && self.orbit_result.is_none() {
+                    ui.separator();
+                    ui.label(egui::RichText::new(&err_msg).color(egui::Color32::RED));
+                }
+
                 // Show orbit tree
                 if let Some(orbit) = &self.orbit_result {
                     ui.separator();
                     egui::ScrollArea::vertical()
                         .max_height(350.0)
                         .show(ui, |ui| {
-                            ui.label(format!("Pieces: {}", orbit.face_count));
+                            let msg = self.compute_output.borrow().clone();
+                            if msg.starts_with("Error:") {
+                                ui.label(egui::RichText::new(msg).color(egui::Color32::RED));
+                            } else {
+                                ui.label(format!("Pieces: {}", orbit.face_count));
+                            }
                             ui.label(format!("Total Orbits: {}", orbit.orbit_count));
 
                             let mut orbits_with_members: Vec<(usize, usize, Vec<usize>)> = (0

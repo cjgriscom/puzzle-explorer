@@ -432,7 +432,7 @@ fn find_or_create_node(nodes: &mut Vec<GraphNode>, v: DVec3) -> usize {
     nodes.len() - 1
 }
 
-pub fn get_poly_centroids(circles: &[Circle], arcs: &[Arc]) -> Vec<Face> {
+pub fn get_poly_centroids(circles: &[Circle], arcs: &[Arc]) -> Result<Vec<Face>, String> {
     // Step 1: Find intersection cuts for each arc
     let mut cuts: Vec<Vec<f64>> = arcs.iter().map(|a| vec![0.0, a.l]).collect();
 
@@ -571,7 +571,18 @@ pub fn get_poly_centroids(circles: &[Circle], arcs: &[Arc]) -> Vec<Face> {
             }
         }
     }
-    faces
+
+    let v = nodes.len();
+    let e = edge_pair_id;
+    let f = faces.len();
+    if v + f != e + 2 {
+        return Err(format!(
+            "Polygon detection failed - Euler's formula mismatch: V={} E={} F={} (expected V-E+F=2)",
+            v, e, f
+        ));
+    }
+
+    Ok(faces)
 }
 
 // --- Orbit Analysis ---
@@ -590,16 +601,16 @@ pub fn compute_orbit_analysis(
     axis_angle_rad: f64,
     colat_a: f64,
     colat_b: f64,
-) -> OrbitAnalysis {
-    let faces = get_poly_centroids(circles, arcs);
+) -> Result<OrbitAnalysis, String> {
+    let faces = get_poly_centroids(circles, arcs)?;
     let n_faces = faces.len();
 
     if n_faces == 0 {
-        return OrbitAnalysis {
+        return Ok(OrbitAnalysis {
             face_positions: vec![],
             orbits: vec![],
             generators: vec![],
-        };
+        });
     }
 
     let axis_a = DVec3::new(0.0, 0.0, 1.0);
@@ -744,18 +755,30 @@ pub fn compute_orbit_analysis(
             let gen_b = perm_to_0_indexed_cycles(&perm_b, members);
             let mut gens_for_orbit = Vec::new();
             if !gen_a.is_empty() {
+                if gen_a.iter().any(|c| c.len() != n_a as usize) {
+                    return Err(format!(
+                        "Orbit Cycle Length mismatch: expected cycle length of {} for move A.",
+                        n_a
+                    ));
+                }
                 gens_for_orbit.push(gen_a);
             }
             if !gen_b.is_empty() {
+                if gen_b.iter().any(|c| c.len() != n_b as usize) {
+                    return Err(format!(
+                        "Orbit Cycle Length mismatch: expected cycle length of {} for move B.",
+                        n_b
+                    ));
+                }
                 gens_for_orbit.push(gen_b);
             }
             generators.push(gens_for_orbit);
         }
     }
 
-    OrbitAnalysis {
+    Ok(OrbitAnalysis {
         face_positions: base_pos,
         orbits,
         generators,
-    }
+    })
 }
