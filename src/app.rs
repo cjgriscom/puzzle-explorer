@@ -320,6 +320,7 @@ pub struct PuzzleApp {
     is_computing: bool,
     compute_output: Rc<RefCell<String>>,
     pending_response: Rc<RefCell<Option<WorkerResponse>>>,
+    pending_message: Option<WorkerMessage>,
     is_dragging: bool,
     last_mouse_pos: [f32; 2],
     stored_geometry: Option<GeometryResult>,
@@ -345,6 +346,7 @@ impl PuzzleApp {
             is_computing: false,
             compute_output: Rc::new(RefCell::new("Ready".to_string())),
             pending_response: Rc::new(RefCell::new(None)),
+            pending_message: None,
             is_dragging: false,
             last_mouse_pos: [0.0, 0.0],
             stored_geometry: None,
@@ -432,15 +434,17 @@ impl PuzzleApp {
         if self.is_computing
             && let Some(start) = self.task_start_time
         {
-            let now = window().unwrap().performance().unwrap().now();
-            if now - start > 3000.0 {
+            // Use a small timeout to avoid spawning too many workers, which causes total app failure
+            if window().unwrap().performance().unwrap().now() - start > 200.0 {
                 *self.compute_output.borrow_mut() = "Timeout, restarting worker...".to_string();
                 self.terminate_and_restart_worker();
+            } else {
+                // Worker is busy but hasn't timed out. Queue the latest parameters instead of restarting.
+                self.pending_message = Some(message);
+                return;
             }
         }
-        if self.is_computing {
-            self.terminate_and_restart_worker();
-        }
+        self.pending_message = None;
         if let Some(w) = &self.worker
             && let Ok(val) = serde_wasm_bindgen::to_value(&message)
         {
@@ -638,6 +642,10 @@ impl eframe::App for PuzzleApp {
                 WorkerResponse::Error(e) => {
                     *self.compute_output.borrow_mut() = format!("Error: {}", e);
                 }
+            }
+
+            if let Some(msg) = self.pending_message.take() {
+                self.post_message(msg);
             }
         }
 
