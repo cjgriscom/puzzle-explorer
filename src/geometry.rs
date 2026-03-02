@@ -503,6 +503,92 @@ pub fn get_poly_centroids(circles: &[Circle], arcs: &[Arc]) -> Result<Vec<Face>,
         }
     }
 
+    // Step 2b: Remove degree-2 nodes (pass-through nodes that don't represent
+    // real intersections). These arise when an intersection point lies on one
+    // arc but the edges on the other arc collapse due to tolerance.
+    loop {
+        let mut merged_any = false;
+        for ni in 0..nodes.len() {
+            if nodes[ni].edges.len() != 2 {
+                continue;
+            }
+            // This node has exactly 2 edges; merge them
+            let e0_to = nodes[ni].edges[0].to;
+            let e0_pid = nodes[ni].edges[0].pair_id;
+            let e1_to = nodes[ni].edges[1].to;
+            let e1_pid = nodes[ni].edges[1].pair_id;
+
+            if e0_to == e1_to {
+                // Both edges go to the same node - just remove both
+                nodes[ni].edges.clear();
+                nodes[e0_to]
+                    .edges
+                    .retain(|e| e.pair_id != e0_pid && e.pair_id != e1_pid);
+                edge_pair_id -= 2;
+                merged_any = true;
+                continue;
+            }
+
+            // Find the back-edges at the two neighbor nodes and record their vec_dir
+            let a_vec = nodes[e0_to]
+                .edges
+                .iter()
+                .find(|e| e.pair_id == e0_pid)
+                .map(|e| e.vec_dir);
+            let b_vec = nodes[e1_to]
+                .edges
+                .iter()
+                .find(|e| e.pair_id == e1_pid)
+                .map(|e| e.vec_dir);
+
+            if a_vec.is_none() || b_vec.is_none() {
+                continue;
+            }
+
+            // Remove old edges from neighbors
+            nodes[e0_to].edges.retain(|e| e.pair_id != e0_pid);
+            nodes[e1_to].edges.retain(|e| e.pair_id != e1_pid);
+
+            // Clear the degree-2 node
+            nodes[ni].edges.clear();
+
+            // Add new merged edge between the two neighbors
+            // The tangent directions at each neighbor are preserved from the
+            // original edges pointing toward ni (which is the same direction
+            // as pointing along the arc through ni toward the other neighbor).
+            let new_pid = edge_pair_id;
+            edge_pair_id += 1;
+            nodes[e0_to].edges.push(GraphEdge {
+                to: e1_to,
+                vec_dir: a_vec.unwrap(),
+                pair_id: new_pid,
+                angle: 0.0,
+            });
+            nodes[e1_to].edges.push(GraphEdge {
+                to: e0_to,
+                vec_dir: b_vec.unwrap(),
+                pair_id: new_pid,
+                angle: 0.0,
+            });
+
+            // Net: removed 2 edges (e0_pid, e1_pid), added 1 (new_pid)
+            // edge_pair_id was already incremented; adjust for the 2 removed
+            // (pair_id is just an ID, not a count, so we don't need to adjust)
+
+            merged_any = true;
+        }
+        if !merged_any {
+            break;
+        }
+    }
+
+    // Recompute edge_pair_id for Euler formula check
+    let mut actual_edges = 0;
+    for node in &nodes {
+        actual_edges += node.edges.len();
+    }
+    edge_pair_id = actual_edges / 2;
+
     // Step 3: Sort edges at each node by angle around the sphere normal
     for node in &mut nodes {
         if node.edges.is_empty() {
@@ -566,6 +652,7 @@ pub fn get_poly_centroids(circles: &[Circle], arcs: &[Arc]) -> Result<Vec<Face>,
                     let angle = p1.angle_between(p2);
                     sum += (p1 + p2).normalize() * angle;
                 }
+
                 faces.push(Face {
                     center: sum.normalize() * LABEL_R,
                 });
@@ -573,7 +660,7 @@ pub fn get_poly_centroids(circles: &[Circle], arcs: &[Arc]) -> Result<Vec<Face>,
         }
     }
 
-    let v = nodes.len();
+    let v = nodes.iter().filter(|n| !n.edges.is_empty()).count();
     let e = edge_pair_id;
     let f = faces.len();
     if v + f != e + 2 {
@@ -618,6 +705,19 @@ pub fn compute_orbit_analysis(
     let axis_b = DVec3::new(axis_angle_rad.sin(), 0.0, axis_angle_rad.cos());
 
     let base_pos: Vec<DVec3> = faces.iter().map(|f| f.center).collect();
+
+    /*
+    // For ignoring orbits and displaying debug points
+    let orbits_all: Vec<Vec<usize>> = (0..n_faces).map(|i| vec![i]).collect();
+
+    if true {
+        return Ok(OrbitAnalysis {
+            face_positions: base_pos,
+            orbits: orbits_all,
+            generators: vec![],
+        });
+    }
+    */
 
     struct Move {
         name: &'static str,
@@ -786,15 +886,14 @@ pub fn compute_orbit_analysis(
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_poly_centroids_case_0() {
-        let n_a = 3;
-        let n_b = 2;
-        let p = 1;
-        let q = 4;
-        let colat_a = 120.0f64.to_radians();
-        let colat_b = 120.0f64.to_radians();
-
+    fn get_poly_centroids_for(
+        n_a: u32,
+        n_b: u32,
+        p: u32,
+        q: u32,
+        colat_a: f64,
+        colat_b: f64,
+    ) -> Result<Vec<Face>, String> {
         let axis_angle = derive_axis_angle(n_a, n_b, p, q).expect("Failed to derive axis angle");
         let (circles, arcs) = compute_arcs(axis_angle, colat_a, colat_b, n_a, n_b);
         let merged_arcs = merge_arcs(&arcs);
@@ -806,7 +905,12 @@ mod tests {
             merged_arcs.len()
         );
 
-        match get_poly_centroids(&circles, &merged_arcs) {
+        get_poly_centroids(&circles, &merged_arcs)
+    }
+
+    #[test]
+    fn test_poly_centroids_case_0() {
+        match get_poly_centroids_for(3, 2, 1, 4, 120.0f64.to_radians(), 120.0f64.to_radians()) {
             Ok(_faces) => {}
             Err(_e) => {
                 //panic!("{}", e);
@@ -818,35 +922,52 @@ mod tests {
 
     #[test]
     fn test_poly_centroids_case_1() {
-        let n_a = 3;
-        let n_b = 2;
-        let p = 1;
-        let q = 3;
-        let colat_a = 104.0f64.to_radians();
-        let colat_b = 131.0f64.to_radians();
+        // Bugged case 03/01/2026 fixed with step 2b
 
-        let axis_angle = derive_axis_angle(n_a, n_b, p, q).expect("Failed to derive axis angle");
-        let (circles, arcs) = compute_arcs(axis_angle, colat_a, colat_b, n_a, n_b);
-        let merged_arcs = merge_arcs(&arcs);
+        // Result A has 58 pieces
+        let result_a =
+            get_poly_centroids_for(3, 2, 1, 3, 125.1f64.to_radians(), 125.1f64.to_radians());
 
-        println!(
-            "Circles: {}, Arcs: {}, Merged Arcs: {}",
-            circles.len(),
-            arcs.len(),
-            merged_arcs.len()
-        );
-
-        let result = get_poly_centroids(&circles, &merged_arcs);
+        // Result B should have faces, pseudo-subset of result A
+        //   there was a bug where one face coordinate was off significantly
+        let result_b =
+            get_poly_centroids_for(3, 2, 1, 3, 125.3f64.to_radians(), 125.3f64.to_radians());
 
         // TODO
-        match result {
-            Ok(faces) => {
-                println!("Found {} faces:", faces.len());
-                for (i, face) in faces.iter().enumerate() {
-                    println!("  Face {}: {:?}", i, face.center);
+        match (result_a, result_b) {
+            (Ok(faces_a), Ok(faces_b)) => {
+                println!("Found {} faces in A:", faces_a.len());
+
+                println!("Found {} faces in B:", faces_b.len());
+
+                let mut matches = Vec::new();
+
+                // Loop thru B faces and find a nearly matching point in A
+                for (j, face_b) in faces_b.iter().enumerate() {
+                    let mut best_idx = None;
+                    let mut best_d = f64::INFINITY;
+                    for (i, face_a) in faces_a.iter().enumerate() {
+                        let d = face_a.center.distance(face_b.center);
+                        if d < best_d {
+                            best_d = d;
+                            best_idx = Some(i);
+                        }
+                    }
+                    if let Some(idx) = best_idx {
+                        if best_d < 0.25 {
+                            matches.push((j + 1, idx + 1, best_d));
+                        } else {
+                            println!("Face {} in B does not match any face in A", j + 1);
+                        }
+                    }
+                }
+
+                matches.sort_by(|a, b| a.2.partial_cmp(&b.2).unwrap());
+                for (j, idx, d) in matches {
+                    println!("Face {} in B matches face {} in A with D={}", j, idx, d);
                 }
             }
-            Err(e) => {
+            (Err(e), _) | (_, Err(e)) => {
                 panic!("Polygon detection failed: {}", e);
             }
         }
