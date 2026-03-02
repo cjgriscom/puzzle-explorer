@@ -48,6 +48,25 @@ pub fn make_circ(pole: DVec3, colat: f64) -> Circle {
     }
 }
 
+#[cfg(test)]
+pub fn arc_avg(c: &Circle, arc: &Arc, da0: f64, da1: f64, n_samples: usize) -> DVec3 {
+    let mut sum = DVec3::ZERO;
+
+    for i in 0..n_samples {
+        let t = da0 + (da1 - da0) * (i as f64 + 0.5) / (n_samples as f64);
+        let ang = norm_ang(arc.s + t);
+        sum += circ_pt(c, ang);
+    }
+    sum / (n_samples as f64)
+}
+
+pub fn arc_integral(c: &Circle, arc: &Arc, a: f64, b: f64) -> DVec3 {
+    let a = a + arc.s;
+    let b = b + arc.s;
+    c.pole * c.colat.cos()
+        + c.colat.sin() * (c.w * (a.cos() - b.cos()) + c.u * (b.sin() - a.sin())) / (b - a)
+}
+
 pub fn circ_pt(c: &Circle, theta: f64) -> DVec3 {
     let sc = c.colat.sin();
     let cc = c.colat.cos();
@@ -412,6 +431,7 @@ struct GraphEdge {
     vec_dir: DVec3,
     pair_id: usize,
     angle: f64,
+    arc_idx: usize,
 }
 
 struct GraphNode {
@@ -493,12 +513,14 @@ pub fn get_poly_centroids(circles: &[Circle], arcs: &[Arc]) -> Result<Vec<Face>,
                 vec_dir: tan_s,
                 pair_id: pid,
                 angle: 0.0,
+                arc_idx: i,
             });
             nodes[idx2].edges.push(GraphEdge {
                 to: idx1,
                 vec_dir: tan_e,
                 pair_id: pid,
                 angle: 0.0,
+                arc_idx: i,
             });
         }
     }
@@ -506,6 +528,7 @@ pub fn get_poly_centroids(circles: &[Circle], arcs: &[Arc]) -> Result<Vec<Face>,
     // Step 2b: Remove degree-2 nodes (pass-through nodes that don't represent
     // real intersections). These arise when an intersection point lies on one
     // arc but the edges on the other arc collapse due to tolerance.
+    // Note: this is probably no longer needed due to integral formula in step 4
     loop {
         let mut merged_any = false;
         for ni in 0..nodes.len() {
@@ -528,6 +551,9 @@ pub fn get_poly_centroids(circles: &[Circle], arcs: &[Arc]) -> Result<Vec<Face>,
                 merged_any = true;
                 continue;
             }
+
+            // Propagate arc_idx for finding midpoint later
+            let arc_idx = nodes[ni].edges[0].arc_idx;
 
             // Find the back-edges at the two neighbor nodes and record their vec_dir
             let a_vec = nodes[e0_to]
@@ -563,12 +589,14 @@ pub fn get_poly_centroids(circles: &[Circle], arcs: &[Arc]) -> Result<Vec<Face>,
                 vec_dir: a_vec.unwrap(),
                 pair_id: new_pid,
                 angle: 0.0,
+                arc_idx,
             });
             nodes[e1_to].edges.push(GraphEdge {
                 to: e0_to,
                 vec_dir: b_vec.unwrap(),
                 pair_id: new_pid,
                 angle: 0.0,
+                arc_idx,
             });
 
             // Net: removed 2 edges (e0_pid, e1_pid), added 1 (new_pid)
@@ -622,7 +650,7 @@ pub fn get_poly_centroids(circles: &[Circle], arcs: &[Arc]) -> Result<Vec<Face>,
 
             loop {
                 visited.insert((curr, curr_edge_idx));
-                path.push(curr);
+                path.push((curr, curr_edge_idx));
 
                 let to = nodes[curr].edges[curr_edge_idx].to;
                 let pid = nodes[curr].edges[curr_edge_idx].pair_id;
@@ -644,13 +672,43 @@ pub fn get_poly_centroids(circles: &[Circle], arcs: &[Arc]) -> Result<Vec<Face>,
                 }
             }
 
+            let old_method = false;
+
             if !fail && curr == i && curr_edge_idx == j && path.len() >= 2 {
                 let mut sum = DVec3::ZERO;
                 for k in 0..path.len() {
-                    let p1 = nodes[path[k]].pos;
-                    let p2 = nodes[path[(k + 1) % path.len()]].pos;
+                    let p1 = nodes[path[k].0].pos;
+                    let p2 = nodes[path[(k + 1) % path.len()].0].pos;
+
                     let angle = p1.angle_between(p2);
-                    sum += (p1 + p2).normalize() * angle;
+
+                    if old_method {
+                        sum += (p1 + p2).normalize() * angle;
+                    } else {
+                        let edge = &nodes[path[k].0].edges[path[k].1];
+                        let arc_idx = edge.arc_idx;
+                        let arc = &arcs[arc_idx];
+                        let c = &circles[arc.circ_idx];
+
+                        // Get circle angles of p1 and p2
+                        let ang1 = pt_ang(c, p1);
+                        let ang2 = pt_ang(c, p2);
+                        let mut da1 = norm_ang(ang1 - arc.s);
+                        let mut da2 = norm_ang(ang2 - arc.s);
+
+                        // Ensure shorter path between angles
+                        if (da2 - da1).abs() > PI {
+                            if da1 < da2 {
+                                da1 += TAU;
+                            } else {
+                                da2 += TAU;
+                            }
+                        }
+
+                        // Integral of arc between p1 and p2
+                        let v = arc_integral(c, arc, da1, da2);
+                        sum += v * norm_ang(da2 - da1).min(norm_ang(da1 - da2));
+                    }
                 }
 
                 faces.push(Face {
@@ -706,8 +764,7 @@ pub fn compute_orbit_analysis(
 
     let base_pos: Vec<DVec3> = faces.iter().map(|f| f.center).collect();
 
-    /*
-    // For ignoring orbits and displaying debug points
+    /* // For ignoring orbits and displaying debug points
     let orbits_all: Vec<Vec<usize>> = (0..n_faces).map(|i| vec![i]).collect();
 
     if true {
@@ -716,8 +773,7 @@ pub fn compute_orbit_analysis(
             orbits: orbits_all,
             generators: vec![],
         });
-    }
-    */
+    } */
 
     struct Move {
         name: &'static str,
@@ -898,12 +954,12 @@ mod tests {
         let (circles, arcs) = compute_arcs(axis_angle, colat_a, colat_b, n_a, n_b);
         let merged_arcs = merge_arcs(&arcs);
 
-        println!(
+        /*println!(
             "Circles: {}, Arcs: {}, Merged Arcs: {}",
             circles.len(),
             arcs.len(),
             merged_arcs.len()
-        );
+        );*/
 
         get_poly_centroids(&circles, &merged_arcs)
     }
@@ -922,7 +978,7 @@ mod tests {
 
     #[test]
     fn test_poly_centroids_case_1() {
-        // Bugged case 03/01/2026 fixed with step 2b
+        // Bugged case 03/01/2026 fixed with step 2b & integral formula
 
         // Result A has 58 pieces
         let result_a =
@@ -936,9 +992,9 @@ mod tests {
         // TODO
         match (result_a, result_b) {
             (Ok(faces_a), Ok(faces_b)) => {
-                println!("Found {} faces in A:", faces_a.len());
+                println!("Found {} faces in A", faces_a.len());
 
-                println!("Found {} faces in B:", faces_b.len());
+                println!("Found {} faces in B", faces_b.len());
 
                 let mut matches = Vec::new();
 
@@ -954,22 +1010,72 @@ mod tests {
                         }
                     }
                     if let Some(idx) = best_idx {
+                        // 4 points don't exist, filter them out
                         if best_d < 0.25 {
                             matches.push((j + 1, idx + 1, best_d));
-                        } else {
-                            println!("Face {} in B does not match any face in A", j + 1);
                         }
                     }
                 }
 
                 matches.sort_by(|a, b| a.2.partial_cmp(&b.2).unwrap());
                 for (j, idx, d) in matches {
-                    println!("Face {} in B matches face {} in A with D={}", j, idx, d);
+                    // Assert d < 0.01
+                    assert!(
+                        d < 0.01,
+                        "Face {} in B does not match face {} in A with D={}",
+                        j,
+                        idx,
+                        d
+                    );
                 }
             }
             (Err(e), _) | (_, Err(e)) => {
                 panic!("Polygon detection failed: {}", e);
             }
+        }
+    }
+
+    #[test]
+    fn test_arc_integral_vs_avg() {
+        // Test that integral formula closely
+        //   matches sampling algo with high number of samples
+
+        let pole = DVec3::new(0.0, 0.0, 1.0);
+        let u = DVec3::new(1.0, 0.0, 0.0);
+        let w = DVec3::new(0.0, 1.0, 0.0);
+        let c_simple = Circle {
+            pole,
+            colat: PI / 3.0,
+            u,
+            w,
+        };
+        let arc_full = Arc {
+            circ_idx: 0,
+            s: 0.0,
+            l: TAU,
+        };
+
+        let simple_cases: Vec<(f64, f64, &str)> = vec![
+            (0.5, 1.5, "normal short arc"),
+            (0.1, TAU - 0.1, "wrap-around across 0 (short path is ~0.2)"),
+            (5.5, 0.5, "da0 > da1, wraps forward"),
+            (TAU - 0.3, 0.3, "symmetric wrap"),
+            (3.0, 3.5, "arc near PI"),
+            (0.0, PI - 0.01, "nearly half-circle"),
+        ];
+
+        for (da0, da1, label) in &simple_cases {
+            let avg = arc_avg(&c_simple, &arc_full, *da0, *da1, 10000);
+            let integral = arc_integral(&c_simple, &arc_full, *da0, *da1);
+            let dist = avg.distance(integral);
+            assert!(
+                dist < 0.01,
+                "arc_integral != arc_avg for case '{}': dist={}, avg={:?}, integral={:?}",
+                label,
+                dist,
+                avg,
+                integral
+            );
         }
     }
 }
