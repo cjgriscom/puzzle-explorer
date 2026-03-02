@@ -295,7 +295,7 @@ impl ThreeState {
         // Boundary circle
         if let Some(circ) = boundary_circle {
             let pts = geometry::sample_arc(circ, 0.0, TAU, 128);
-            self.add_line_to_group_raw(&static_grp, &pts, true, 0x000000);
+            self.add_line_to_group_raw(&static_grp, &pts, true, crate::color::ARC_COLOR);
         }
 
         let pt_dot = |p: &[f32; 3]| -> f64 {
@@ -337,7 +337,7 @@ impl ThreeState {
 
             for (run_pts, inside) in runs {
                 let grp = if inside { &rot_grp } else { &static_grp };
-                self.add_line_to_group_raw(grp, &run_pts, false, 0x000000);
+                self.add_line_to_group_raw(grp, &run_pts, false, crate::color::ARC_COLOR);
             }
         }
 
