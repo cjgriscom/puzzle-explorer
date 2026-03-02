@@ -719,8 +719,6 @@ pub fn compute_orbit_analysis(
         orbits.push(members);
     }
 
-    // GAP notation
-
     let perm_to_0_indexed_cycles = |perm: &[usize], subset: &[usize]| -> Vec<Vec<usize>> {
         let mut in_set = std::collections::HashMap::new();
         for (i, &v) in subset.iter().enumerate() {

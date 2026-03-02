@@ -62,6 +62,9 @@ extern "C" {
     #[wasm_bindgen(method, structural, getter, js_namespace = THREE)]
     pub fn quaternion(this: &Object3D) -> Quaternion;
 
+    #[wasm_bindgen(method, structural, getter, js_namespace = THREE)]
+    pub fn scale(this: &Object3D) -> Vector3;
+
     // --- Scene ---
     #[wasm_bindgen(js_namespace = THREE, extends = Object3D)]
     pub type Scene;
@@ -139,6 +142,36 @@ extern "C" {
 
     #[wasm_bindgen(method, structural, js_namespace = THREE)]
     pub fn dispose(this: &LineBasicMaterial);
+
+    // --- Texture / CanvasTexture ---
+    #[wasm_bindgen(js_namespace = THREE)]
+    pub type Texture;
+
+    #[wasm_bindgen(method, structural, js_namespace = THREE)]
+    pub fn dispose(this: &Texture);
+
+    #[wasm_bindgen(js_namespace = THREE, extends = Texture)]
+    pub type CanvasTexture;
+
+    #[wasm_bindgen(constructor, js_namespace = THREE)]
+    pub fn new(canvas: &web_sys::HtmlCanvasElement) -> CanvasTexture;
+
+    // --- SpriteMaterial ---
+    #[wasm_bindgen(js_namespace = THREE)]
+    pub type SpriteMaterial;
+
+    #[wasm_bindgen(constructor, js_namespace = THREE)]
+    pub fn new(parameters: &js_sys::Object) -> SpriteMaterial;
+
+    #[wasm_bindgen(method, structural, js_namespace = THREE)]
+    pub fn dispose(this: &SpriteMaterial);
+
+    // --- Sprite ---
+    #[wasm_bindgen(js_namespace = THREE, extends = Object3D)]
+    pub type Sprite;
+
+    #[wasm_bindgen(constructor, js_namespace = THREE)]
+    pub fn new(material: &SpriteMaterial) -> Sprite;
 
     // --- Line / LineLoop ---
     #[wasm_bindgen(js_namespace = THREE, extends = Object3D)]

@@ -14,6 +14,7 @@ pub struct PuzzleParams {
 #[derive(Clone, Debug, PartialEq)]
 pub struct OrbitAnalysisState {
     pub annotate_pieces: bool,
+    pub number_pieces: bool,
     pub auto_update_orbits: bool,
     pub auto_update_groups: bool,
     pub orbits_stale: bool,
@@ -25,6 +26,7 @@ impl Default for OrbitAnalysisState {
     fn default() -> Self {
         Self {
             annotate_pieces: true,
+            number_pieces: false,
             auto_update_orbits: false,
             auto_update_groups: false,
             orbits_stale: false,
@@ -41,8 +43,8 @@ impl Default for PuzzleParams {
             n_b: 2,
             p: 1,
             q: 3,
-            colat_a: 119.4,
-            colat_b: 119.4,
+            colat_a: 127.5,
+            colat_b: 127.5,
             lock_cuts: true,
         }
     }

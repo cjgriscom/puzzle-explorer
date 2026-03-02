@@ -286,7 +286,34 @@ impl GapManager {
         self.current_buffer.clear();
     }
 
-    pub fn construct_group_cmd(generators: &[Vec<Vec<usize>>]) -> String {
+    pub fn reconstruct_generator_numbering_from_members(
+        generators: &[Vec<Vec<usize>>],
+        members: &[usize],
+    ) -> Result<Vec<Vec<Vec<usize>>>, String> {
+        let mut renumbered = Vec::new();
+        for cycles in generators {
+            let mut new_cycles = Vec::new();
+            for cycle in cycles {
+                let mut new_cycle = Vec::new();
+                for &piece in cycle {
+                    let num = match members.get(piece) {
+                        Some(n) => *n,
+                        None => return Err(format!("Piece {} not found in members", piece)),
+                    };
+                    new_cycle.push(num);
+                }
+                new_cycles.push(new_cycle);
+            }
+            renumbered.push(new_cycles);
+        }
+        Ok(renumbered)
+    }
+
+    pub fn format_group_generator(
+        src_is_one_indexed: bool,
+        generators: &[Vec<Vec<usize>>],
+    ) -> String {
+        let off = if src_is_one_indexed { 0 } else { 1 };
         let mut gap_parts = Vec::new();
         for generator in generators {
             if generator.is_empty() {
@@ -297,7 +324,7 @@ impl GapManager {
                     .map(|cycle| {
                         let c_str = cycle
                             .iter()
-                            .map(|&idx| (idx + 1).to_string()) // 1-indexed for GAP
+                            .map(|&idx| (idx + off).to_string()) // 1-indexed for GAP
                             .collect::<Vec<_>>()
                             .join(",");
                         format!("({})", c_str)
@@ -307,10 +334,13 @@ impl GapManager {
                 gap_parts.push(cycle_str);
             }
         }
+        format!("[{}]", gap_parts.join(","))
+    }
 
+    pub fn construct_group_cmd(generators: &[Vec<Vec<usize>>]) -> String {
         format!(
-            "g := Group([{}]);; Print(Size(g), \"\\n\", StructureDescription(g));",
-            gap_parts.join(",")
+            "g := Group({});; Print(Size(g), \"\\n\", StructureDescription(g));",
+            Self::format_group_generator(false, generators)
         )
     }
 }

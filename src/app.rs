@@ -12,9 +12,9 @@ use crate::geometry::{self, DISP_R, R, TAU};
 use crate::gui::{OrbitAnalysisState, PuzzleParams, toggle};
 use crate::puzzle::{GeometryParams, GeometryResult, OrbitParams, OrbitResult, PolyLine};
 use crate::three::{
-    BufferAttribute, BufferGeometry, Group, Line, LineBasicMaterial, LineLoop, Mesh,
-    MeshBasicMaterial, PerspectiveCamera, Quaternion, Scene, SphereGeometry, Vector3,
-    WebGLRenderer,
+    BufferAttribute, BufferGeometry, CanvasTexture, Group, Line, LineBasicMaterial, LineLoop, Mesh,
+    MeshBasicMaterial, PerspectiveCamera, Quaternion, Scene, SphereGeometry, Sprite,
+    SpriteMaterial, Vector3, WebGLRenderer,
 };
 use crate::worker::{WorkerMessage, WorkerResponse};
 
@@ -172,7 +172,7 @@ impl ThreeState {
         }
     }
 
-    pub fn update_face_dots(&self, orbit_result: &OrbitResult) {
+    pub fn update_face_dots(&self, orbit_result: &OrbitResult, number_pieces: bool) {
         self.face_group.clear();
 
         let n_orbits = orbit_result.orbit_count;
@@ -205,15 +205,75 @@ impl ThreeState {
                 ORBIT_COLORS[orbit_color_idx[oi] % ORBIT_COLORS.len()].1
             };
 
-            let mat_params = js_sys::Object::new();
-            let _ =
-                js_sys::Reflect::set(&mat_params, &"color".into(), &color_to_hex(&color).into());
-            let mat = MeshBasicMaterial::new(&mat_params);
-            let mesh = Mesh::new(&dot_geo, &mat);
-            mesh.position()
-                .set(pos[0] as f64, pos[1] as f64, pos[2] as f64);
-            self.face_group.add(&mesh);
+            if number_pieces {
+                let sprite = self.create_label(&(fi + 1).to_string(), &color);
+                sprite
+                    .position()
+                    .set(pos[0] as f64, pos[1] as f64, pos[2] as f64);
+                // Move it out slightly to avoid depth fighting if it's right on the surface
+                let center_norm =
+                    glam::DVec3::new(pos[0] as f64, pos[1] as f64, pos[2] as f64).normalize();
+                let label_pos = center_norm * crate::geometry::LABEL_R;
+                sprite.position().set(label_pos.x, label_pos.y, label_pos.z);
+                self.face_group.add(&sprite);
+            } else {
+                let mat_params = js_sys::Object::new();
+                let _ = js_sys::Reflect::set(
+                    &mat_params,
+                    &"color".into(),
+                    &color_to_hex(&color).into(),
+                );
+                let mat = MeshBasicMaterial::new(&mat_params);
+                let mesh = Mesh::new(&dot_geo, &mat);
+                mesh.position()
+                    .set(pos[0] as f64, pos[1] as f64, pos[2] as f64);
+                self.face_group.add(&mesh);
+            }
         }
+    }
+
+    fn create_label(&self, text: &str, color: &[f32; 3]) -> Sprite {
+        let window = web_sys::window().unwrap();
+        let document = window.document().unwrap();
+        let canvas = document
+            .create_element("canvas")
+            .unwrap()
+            .dyn_into::<web_sys::HtmlCanvasElement>()
+            .ok()
+            .unwrap();
+        canvas.set_width(64);
+        canvas.set_height(64);
+        let ctx = canvas
+            .get_context("2d")
+            .unwrap()
+            .unwrap()
+            .dyn_into::<web_sys::CanvasRenderingContext2d>()
+            .ok()
+            .unwrap();
+
+        let r = (color[0] * 255.0) as u8;
+        let g = (color[1] * 255.0) as u8;
+        let b = (color[2] * 255.0) as u8;
+        ctx.set_fill_style_str(&format!("rgb({}, {}, {})", r, g, b));
+        ctx.begin_path();
+        ctx.arc(32.0, 32.0, 28.0, 0.0, std::f64::consts::TAU)
+            .unwrap();
+        ctx.fill();
+
+        let contrast_color = crate::color::get_contrast_color(r, g, b);
+        ctx.set_fill_style_str(&contrast_color);
+        ctx.set_font("bold 32px Courier New");
+        ctx.set_text_align("center");
+        ctx.set_text_baseline("middle");
+        let _ = ctx.fill_text(text, 32.0, 34.0);
+
+        let texture = CanvasTexture::new(&canvas);
+        let mat_params = js_sys::Object::new();
+        let _ = js_sys::Reflect::set(&mat_params, &"map".into(), &texture);
+        let material = SpriteMaterial::new(&mat_params);
+        let sprite = Sprite::new(&material);
+        sprite.scale().set(0.12, 0.12, 1.0);
+        sprite
     }
 
     pub fn clear_face_dots(&self) {
@@ -676,7 +736,7 @@ impl eframe::App for PuzzleApp {
                     *self.compute_output.borrow_mut() =
                         format!("{} pieces, {} orbits", data.face_count, data.orbit_count);
                     if let Some(three) = &self.three {
-                        three.update_face_dots(&data);
+                        three.update_face_dots(&data, self.orbit_state.number_pieces);
                     }
                     self.orbit_dreadnaut.clear();
                     self.orbit_gap.clear();
@@ -930,6 +990,18 @@ impl eframe::App for PuzzleApp {
 
                 ui.horizontal(|ui| {
                     if ui
+                        .add(toggle(&mut self.orbit_state.number_pieces))
+                        .changed()
+                        && let Some(three) = &self.three
+                        && let Some(orbit) = &self.orbit_result
+                    {
+                        three.update_face_dots(orbit, self.orbit_state.number_pieces);
+                    }
+                    ui.label("Number pieces");
+                });
+
+                ui.horizontal(|ui| {
+                    if ui
                         .add(toggle(&mut self.orbit_state.auto_update_orbits))
                         .changed()
                         && self.orbit_state.auto_update_orbits
@@ -1045,6 +1117,19 @@ impl eframe::App for PuzzleApp {
                                 .id_salt(format!("orbit_header_{}", oi))
                                 .default_open(true)
                                 .show(ui, |ui| {
+                                    // Show generator if number_pieces
+                                    if self.orbit_state.number_pieces
+                                        && let Some(orbit) = &self.orbit_result
+                                    {
+                                        ui.label(format!(
+                                            "Generator: {}",
+                                            match GapManager::reconstruct_generator_numbering_from_members(&orbit.generators[oi], &members) {
+                                                Ok(renumbered) => GapManager::format_group_generator(true, &renumbered),
+                                                Err(e) => e,
+                                            }
+                                        ));
+                                    }
+
                                     if let Some(hash) = self.orbit_dreadnaut.get(&oi) {
                                         ui.label(format!("Canonical Label: {}", hash));
                                     } else {
