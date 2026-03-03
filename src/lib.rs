@@ -4,7 +4,8 @@ mod app;
 mod color;
 mod dreadnaut;
 mod gap;
-mod geometry;
+// reexport geometry module from puzzle-explorer-math
+pub use puzzle_explorer_math::geometry;
 mod gui;
 mod puzzle;
 mod three;

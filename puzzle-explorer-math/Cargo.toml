@@ -1,0 +1,13 @@
+[package]
+name = "puzzle-explorer-math"
+description = "Math utilities for puzzle-explorer"
+license = "MIT OR Apache-2.0"
+
+version.workspace = true
+edition.workspace = true
+homepage.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+glam.workspace = true

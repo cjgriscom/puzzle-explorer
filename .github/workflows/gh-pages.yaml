@@ -38,7 +38,7 @@ jobs:
           cp index.html dist/
           cp coi-serviceworker.js dist/
           cp -r pkg dist/
-          cp -r js dist/
+          cp -r dreadnaut dist/
           cp -r gap dist/
           # Ensure no unnecessary large files or hidden files are copied
           find dist -name ".git*" -exec rm -rf {} +

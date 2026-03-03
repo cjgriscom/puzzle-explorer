@@ -1,12 +1,36 @@
 [package]
 name = "puzzle-explorer"
+description = "A web application for puzzle design and geometry analysis"
+license = "GPL-3.0-only"
+
+version.workspace = true
+edition.workspace = true
+homepage.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[workspace]
+members = [
+    ".",
+    "puzzle-explorer-math",
+]
+
+[workspace.package]
 version = "0.1.0"
 edition = "2024"
+homepage = "https://cjgriscom.github.io/puzzle-explorer/"
+repository = "https://github.com/cjgriscom/puzzle-explorer/"
+authors = ["Chandler Griscom"]
+
+[workspace.dependencies]
+glam = "0.32.0"
+puzzle-explorer-math = { path = "puzzle-explorer-math" }
 
 [lib]
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
+puzzle-explorer-math.workspace = true
 wasm-bindgen = "0.2"
 js-sys = "0.3"
 web-sys = { version = "0.3", features = ["console", "Window", "Document", "HtmlCanvasElement", "CanvasRenderingContext2d", "Element", "Node", "HtmlElement", "Worker", "WorkerOptions", "MessageEvent", "Blob", "Url", "File", "Event", "EventTarget", "Performance"] }
@@ -18,7 +42,7 @@ console_log = "1.0"
 wasm-bindgen-futures = "0.4"
 serde = { version = "1.0.228", features = ["derive"] }
 serde-wasm-bindgen = "0.6.5"
-glam = "0.32.0"
+glam.workspace = true
 
 [package.metadata.wasm-pack.profile.release]
 wasm-opt = true

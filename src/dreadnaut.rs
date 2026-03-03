@@ -36,7 +36,7 @@ impl DreadnautManager {
         let options = WorkerOptions::new();
         let _ = js_sys::Reflect::set(&options, &"type".into(), &"module".into());
 
-        if let Ok(w) = Worker::new_with_options("./js/dreadnaut-worker.js", &options) {
+        if let Ok(w) = Worker::new_with_options("./dreadnaut/dreadnaut-worker.js", &options) {
             let response_clone = self.pending_responses.clone();
             let ctx_clone = ctx.clone();
             let on_msg = Closure::wrap(Box::new(move |e: MessageEvent| {
