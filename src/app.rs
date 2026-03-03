@@ -56,6 +56,8 @@ pub struct ThreeState {
     cut_group: Group,
     face_group: Group,
     cam_dist: f64,
+    pan_screen: [f64; 2],
+    base_group_y: f64,
 }
 
 impl ThreeState {
@@ -109,7 +111,8 @@ impl ThreeState {
 
         group.rotateX(0.35);
         group.rotateY(-0.5);
-        group.position().set(0.0, -0.3, 0.0);
+        let base_group_y = -0.3;
+        group.position().set(0.0, base_group_y, 0.0);
         scene.add(&group);
 
         Some(Self {
@@ -120,6 +123,8 @@ impl ThreeState {
             cut_group,
             face_group,
             cam_dist,
+            pan_screen: [0.0, 0.0],
+            base_group_y,
         })
     }
 
@@ -141,6 +146,23 @@ impl ThreeState {
     pub fn zoom(&mut self, scroll_y: f64) {
         let factor = if scroll_y > 0.0 { 0.92 } else { 1.08 };
         self.cam_dist = (self.cam_dist * factor).clamp(1.5, 20.0);
+        self.apply_view_transform();
+    }
+
+    pub fn pan_drag(&mut self, dx: f64, dy: f64, viewport_size: [f32; 2]) {
+        let denom = (viewport_size[0].min(viewport_size[1]) as f64).max(1.0);
+        let pan_scale = 2.0 / denom;
+        self.pan_screen[0] += dx * pan_scale;
+        self.pan_screen[1] -= dy * pan_scale;
+        self.apply_view_transform();
+    }
+
+    fn apply_view_transform(&self) {
+        // Scale world-space pan by camera distance so wheel zoom keeps the sphere centered
+        // at its current on-screen position instead of drifting toward canvas center.
+        let x = self.pan_screen[0] * self.cam_dist;
+        let y = self.base_group_y + self.pan_screen[1] * self.cam_dist;
+        self.group.position().set(x, y, 0.0);
         self.camera.cam_position().set(0.0, 0.0, self.cam_dist);
     }
 
@@ -375,7 +397,8 @@ pub struct PuzzleApp {
     compute_output: Rc<RefCell<String>>,
     pending_response: Rc<RefCell<Option<WorkerResponse>>>,
     pending_message: Option<WorkerMessage>,
-    is_dragging: bool,
+    is_rotating_drag: bool,
+    is_panning_drag: bool,
     last_mouse_pos: [f32; 2],
     stored_geometry: Option<GeometryResult>,
     geometry_index: usize,
@@ -419,7 +442,8 @@ impl PuzzleApp {
             compute_output: Rc::new(RefCell::new("Ready".to_string())),
             pending_response: Rc::new(RefCell::new(None)),
             pending_message: None,
-            is_dragging: false,
+            is_rotating_drag: false,
+            is_panning_drag: false,
             last_mouse_pos: [0.0, 0.0],
             stored_geometry: None,
             geometry_index: 0,
@@ -682,20 +706,36 @@ impl eframe::App for PuzzleApp {
         let anim_active = self.anim.is_some();
 
         if !pointer_over_ui && !anim_active {
-            if ctx.input(|i| i.pointer.primary_down()) {
-                if let Some(pos) = ctx.input(|i| i.pointer.interact_pos()) {
-                    if self.is_dragging {
+            let primary_down = ctx.input(|i| i.pointer.primary_down());
+            let middle_down = ctx.input(|i| i.pointer.middle_down());
+            if let Some(pos) = ctx.input(|i| i.pointer.interact_pos()) {
+                if primary_down && !middle_down {
+                    if self.is_rotating_drag {
                         let dx = (pos.x - self.last_mouse_pos[0]) as f64 * 0.005;
                         let dy = (pos.y - self.last_mouse_pos[1]) as f64 * 0.005;
                         if let Some(three) = &self.three {
                             three.rotate_drag(dx, dy);
                         }
                     }
-                    self.is_dragging = true;
+                    self.is_rotating_drag = true;
+                    self.is_panning_drag = false;
                     self.last_mouse_pos = [pos.x, pos.y];
+                } else if middle_down && !primary_down {
+                    if self.is_panning_drag {
+                        let dx = (pos.x - self.last_mouse_pos[0]) as f64 * 0.25;
+                        let dy = (pos.y - self.last_mouse_pos[1]) as f64 * 0.25;
+                        if let Some(three) = &mut self.three {
+                            let viewport = ctx.input(|i| i.content_rect().size());
+                            three.pan_drag(dx, dy, [viewport.x, viewport.y]);
+                        }
+                    }
+                    self.is_panning_drag = true;
+                    self.is_rotating_drag = false;
+                    self.last_mouse_pos = [pos.x, pos.y];
+                } else {
+                    self.is_rotating_drag = false;
+                    self.is_panning_drag = false;
                 }
-            } else {
-                self.is_dragging = false;
             }
             let scroll_y = ctx.input(|i| i.raw_scroll_delta.y);
             if scroll_y != 0.0
@@ -704,11 +744,23 @@ impl eframe::App for PuzzleApp {
                 three.zoom(scroll_y as f64);
             }
         } else {
-            self.is_dragging = false;
+            self.is_rotating_drag = false;
+            self.is_panning_drag = false;
         }
 
         if let Some(three) = &self.three {
             three.render();
+        }
+
+        // Keyboard shortcuts for rotations (disabled while typing into text fields).
+        if !ctx.wants_keyboard_input() && self.anim.is_none() {
+            let shift = ctx.input(|i| i.modifiers.shift);
+            if ctx.input(|i| i.key_pressed(egui::Key::A)) {
+                self.start_rotation('A', !shift);
+            }
+            if ctx.input(|i| i.key_pressed(egui::Key::B)) {
+                self.start_rotation('B', !shift);
+            }
         }
 
         let mut geom_response = None;
@@ -829,13 +881,12 @@ impl eframe::App for PuzzleApp {
         // -- Controls Window ---
         let buttons_enabled = self.anim.is_none();
 
-        egui::Window::new("Puzzle Controls")
+        egui::Window::new("Puzzle Parameters")
             .default_pos([50.0, 50.0])
             .show(ctx, |ui| {
                 // Bigger slider than default
                 ui.spacing_mut().slider_width = 250.0;
 
-                ui.heading("Parameters");
                 let mut changed = false;
 
                 ui.horizontal(|ui| {
@@ -956,8 +1007,6 @@ impl eframe::App for PuzzleApp {
                     changed = true;
                 }
 
-                ui.separator();
-
                 ui.label(format!("Cut A: {:.1}\u{00B0}", self.params.colat_a));
                 if ui
                     .add(
@@ -1020,6 +1069,22 @@ impl eframe::App for PuzzleApp {
                         }
                     });
                 });
+            });
+
+        egui::Window::new("Controls")
+            .default_pos([500.0, 100.0])
+            .default_open(false)
+            .show(ctx, |ui| {
+                ui.label("Mouse controls:");
+                ui.label("- Left-drag: rotate sphere");
+                ui.label("- Middle-drag: pan sphere");
+                ui.label("- Mouse wheel: zoom");
+                ui.separator();
+                ui.label("Rotation shortcuts:");
+                ui.label("- A: rotate axis A");
+                ui.label("- Shift+A: inverse rotate axis A");
+                ui.label("- B: rotate axis B");
+                ui.label("- Shift+B: inverse rotate axis B");
             });
 
         // Orbit Analysis Window
@@ -1214,7 +1279,13 @@ impl eframe::App for PuzzleApp {
             });
 
         // GAP Window
-        egui::Window::new("GAP Console")
+        let gap_title = match &self.gap_manager.state {
+            GapState::Loading(_, _) => "GAP Console (loading...)",
+            GapState::Error(_) => "GAP Console (error)",
+            _ => "GAP Console",
+        };
+        egui::Window::new(gap_title)
+            .id("GAP Console".into()) // unchanging ID
             .default_pos([500.0, 50.0])
             .default_width(500.0)
             .default_open(false)
