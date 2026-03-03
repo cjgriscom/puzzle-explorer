@@ -113,12 +113,6 @@ impl DreadnautManager {
         script
     }
 
-    pub fn clear_queue(&mut self) {
-        self.queue.clear();
-        self.completed_jobs.clear();
-        self.pending_responses.borrow_mut().clear();
-    }
-
     pub fn enqueue_batch(&mut self, jobs: Vec<(usize, String)>) {
         // Enqueue a batch of scripts with unique IDs
         let mut full_script = String::new();

@@ -748,10 +748,6 @@ impl eframe::App for PuzzleApp {
                     }
                     self.orbit_dreadnaut.clear();
                     self.orbit_gap.clear();
-                    self.dreadnaut_data.clear_queue();
-                    self.gap_manager.clear_queue();
-                    self.pending_dreadnaut_requests.clear();
-                    self.pending_gap_requests.clear();
 
                     self.orbit_result = None;
                 }
@@ -763,8 +759,6 @@ impl eframe::App for PuzzleApp {
                     }
                     self.orbit_dreadnaut.clear();
                     self.orbit_gap.clear();
-                    self.pending_dreadnaut_requests.clear();
-                    self.pending_gap_requests.clear();
 
                     let mut dreadnaut_batch = Vec::new();
                     for (oi, gens) in data.generators.iter().enumerate() {

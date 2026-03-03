@@ -278,14 +278,6 @@ impl GapManager {
         self.try_send_next_job();
     }
 
-    pub fn clear_queue(&mut self) {
-        self.queue.clear();
-        self.pending_commands.clear();
-        self.completed_jobs.clear();
-        self.current_job = None;
-        self.current_buffer.clear();
-    }
-
     pub fn reconstruct_generator_numbering_from_members(
         generators: &[Vec<Vec<usize>>],
         members: &[usize],
