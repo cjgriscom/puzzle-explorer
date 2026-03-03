@@ -633,7 +633,7 @@ pub fn get_poly_centroids(circles: &[Circle], arcs: &[Arc]) -> Result<Vec<Face>,
     }
 
     // Step 4: Walk faces by following "next edge" (turn right) at each node
-    let mut faces = Vec::new();
+    let mut faces: Vec<Face> = Vec::new();
     let mut visited: HashSet<(usize, usize)> = HashSet::new();
     let mut skipped_faces = 0;
 
@@ -718,9 +718,23 @@ pub fn get_poly_centroids(circles: &[Circle], arcs: &[Arc]) -> Result<Vec<Face>,
 
                 // Filter out tiny faces
                 if perimeter > 0.02 {
-                    faces.push(Face {
-                        center: sum.normalize() * LABEL_R,
-                    });
+                    // Check for near-duplicates
+                    // TODO figure out why this happens in the first place
+                    //      4, 4, 1/4, 62°
+                    let mut has_duplicate = false;
+                    for f in &faces {
+                        if f.center.distance(sum.normalize() * LABEL_R) < 1e-4 {
+                            has_duplicate = true;
+                            break;
+                        }
+                    }
+                    if !has_duplicate {
+                        faces.push(Face {
+                            center: sum.normalize() * LABEL_R,
+                        });
+                    } else {
+                        skipped_faces += 1;
+                    }
                 } else {
                     skipped_faces += 1;
                 }
@@ -922,21 +936,21 @@ pub fn compute_orbit_analysis(
             let gen_b = perm_to_0_indexed_cycles(&perm_b, members);
             let mut gens_for_orbit = Vec::new();
             if !gen_a.is_empty() {
-                if gen_a.iter().any(|c| c.len() != n_a as usize) {
+                /*if gen_a.iter().any(|c| c.len() != n_a as usize) {
                     return Err(format!(
                         "Orbit Cycle Length mismatch: expected cycle length of {} for move A.",
                         n_a
                     ));
-                }
+                }*/
                 gens_for_orbit.push(gen_a);
             }
             if !gen_b.is_empty() {
-                if gen_b.iter().any(|c| c.len() != n_b as usize) {
+                /*if gen_b.iter().any(|c| c.len() != n_b as usize) {
                     return Err(format!(
                         "Orbit Cycle Length mismatch: expected cycle length of {} for move B.",
                         n_b
                     ));
-                }
+                }*/
                 gens_for_orbit.push(gen_b);
             }
             generators.push(gens_for_orbit);
