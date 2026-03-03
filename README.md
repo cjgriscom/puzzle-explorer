@@ -1,5 +1,7 @@
 # puzzle-explorer-rs
 
+https://cjgriscom.github.io/puzzle-explorer-rs/
+
 ## Nauty and Traces Integration
 Nauty and Traces are used via a WASM port of the Dreadnaut CLI.  These algorithms are used to canonize orbit generators, which is useful for caching purposes and for checking the uniqueness of piece types.
 Homepage: https://pallini.di.uniroma1.it/
