@@ -42,13 +42,13 @@ impl Default for PuzzleParams {
     fn default() -> Self {
         Self {
             n_a: 3,
-            n_b: 2,
+            n_b: 3,
             p: 1,
-            q: 3,
+            q: 5,
             manual_axis_angle: false,
             manual_axis_angle_deg: 63.4349,
-            colat_a: 127.5,
-            colat_b: 127.5,
+            colat_a: 109.5,
+            colat_b: 109.5,
             lock_cuts: true,
         }
     }
