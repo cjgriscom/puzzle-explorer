@@ -58,6 +58,7 @@ pub struct ThreeState {
     cam_dist: f64,
     pan_screen: [f64; 2],
     base_group_y: f64,
+    viewport_size: [f64; 2],
 }
 
 impl ThreeState {
@@ -125,11 +126,36 @@ impl ThreeState {
             cam_dist,
             pan_screen: [0.0, 0.0],
             base_group_y,
+            viewport_size: [width, height],
         })
     }
 
     pub fn render(&self) {
         self.renderer.render(&self.scene, &self.camera);
+    }
+
+    pub fn sync_resize(&mut self) {
+        let Some(window) = window() else {
+            return;
+        };
+        let Some(width) = window.inner_width().ok().and_then(|v| v.as_f64()) else {
+            return;
+        };
+        let Some(height) = window.inner_height().ok().and_then(|v| v.as_f64()) else {
+            return;
+        };
+        if width <= 0.0 || height <= 0.0 {
+            return;
+        }
+
+        if (width - self.viewport_size[0]).abs() < 0.5 && (height - self.viewport_size[1]).abs() < 0.5 {
+            return;
+        }
+
+        self.viewport_size = [width, height];
+        self.renderer.setSize(width, height);
+        self.camera.set_aspect(width / height);
+        self.camera.updateProjectionMatrix();
     }
 
     pub fn rotate_drag(&self, dx: f64, dy: f64) {
@@ -748,7 +774,8 @@ impl eframe::App for PuzzleApp {
             self.is_panning_drag = false;
         }
 
-        if let Some(three) = &self.three {
+        if let Some(three) = &mut self.three {
+            three.sync_resize();
             three.render();
         }
 
