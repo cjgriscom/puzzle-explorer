@@ -49,6 +49,7 @@ pub fn worker_handle_msg(msg: JsValue) -> JsValue {
                     params.colat_b.to_radians() as f64,
                     params.n_a,
                     params.n_b,
+                    params.max_iterations_cap.map(|cap| cap as usize),
                 );
                 let arcs = merge_arcs(&arcs);
 
@@ -83,7 +84,14 @@ pub fn worker_handle_msg(msg: JsValue) -> JsValue {
                     let colat_b = params.colat_b.to_radians() as f64;
 
                     let (circles, arcs) =
-                        compute_arcs(axis_angle, colat_a, colat_b, params.n_a, params.n_b);
+                        compute_arcs(
+                            axis_angle,
+                            colat_a,
+                            colat_b,
+                            params.n_a,
+                            params.n_b,
+                            params.max_iterations_cap.map(|cap| cap as usize),
+                        );
                     let arcs = merge_arcs(&arcs);
 
                     let analysis = match compute_orbit_analysis(

@@ -600,6 +600,14 @@ impl PuzzleApp {
         }
     }
 
+    fn max_iterations_cap_override(&self) -> Option<u32> {
+        if self.params.manual_axis_angle {
+            Some(self.params.manual_max_iterations.max(1))
+        } else {
+            None
+        }
+    }
+
     fn spawn_geometry_worker(&mut self) {
         self.orbit_result = None;
         if let Some(three) = &self.three {
@@ -613,6 +621,7 @@ impl PuzzleApp {
             colat_a: self.params.colat_a,
             colat_b: self.params.colat_b,
             axis_angle_override: self.axis_angle_override(),
+            max_iterations_cap: self.max_iterations_cap_override(),
         };
         self.post_message(WorkerMessage::ComputeGeometry(params));
     }
@@ -626,6 +635,7 @@ impl PuzzleApp {
             colat_a: self.params.colat_a,
             colat_b: self.params.colat_b,
             axis_angle_override: self.axis_angle_override(),
+            max_iterations_cap: self.max_iterations_cap_override(),
         };
         self.post_message(WorkerMessage::ComputeOrbits(params));
     }
@@ -995,6 +1005,18 @@ impl eframe::App for PuzzleApp {
                                     .speed(0.01)
                                     .fixed_decimals(4)
                                     .suffix("°"),
+                            )
+                            .changed()
+                        {
+                            changed = true;
+                        }
+                        ui.separator();
+                        ui.label("Max Iterations:");
+                        if ui
+                            .add(
+                                egui::DragValue::new(&mut self.params.manual_max_iterations)
+                                    .range(1..=2000)
+                                    .speed(0.5),
                             )
                             .changed()
                         {

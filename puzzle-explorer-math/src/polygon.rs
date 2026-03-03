@@ -354,7 +354,7 @@ mod tests {
         colat_b: f64,
     ) -> Result<Vec<Face>, String> {
         let axis_angle = derive_axis_angle(n_a, n_b, p, q).expect("Failed to derive axis angle");
-        let (circles, arcs) = compute_arcs(axis_angle, colat_a, colat_b, n_a, n_b);
+        let (circles, arcs) = compute_arcs(axis_angle, colat_a, colat_b, n_a, n_b, None);
         let merged_arcs = merge_arcs(&arcs);
 
         /*println!(

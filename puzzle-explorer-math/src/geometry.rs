@@ -2,6 +2,8 @@ use glam::DVec3;
 use std::collections::BTreeMap;
 use crate::math::{PI, TAU, norm_ang};
 use crate::circle::{Circle, Arc};
+
+const AUTO_MAX_ITERS: usize = 100;
 pub struct Interval {
     pub s: f64,
     pub l: f64,
@@ -170,6 +172,7 @@ pub fn compute_arcs(
     colat_b: f64,
     n_a: u32,
     n_b: u32,
+    max_iterations_cap: Option<usize>,
 ) -> (Vec<Circle>, Vec<Arc>) {
     let axis_a = DVec3::new(0.0, 0.0, 1.0);
     let axis_b = DVec3::new(axis_angle_rad.sin(), 0.0, axis_angle_rad.cos());
@@ -198,7 +201,8 @@ pub fn compute_arcs(
     });
 
     let mut step_start = 0;
-    for _ in 0..100 {
+    let max_iterations = max_iterations_cap.unwrap_or(AUTO_MAX_ITERS);
+    for _ in 0..max_iterations {
         let before = disp_arcs.len();
         let mut bailout = false;
 
