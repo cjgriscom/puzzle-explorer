@@ -5,6 +5,7 @@ mod color;
 mod dreadnaut;
 mod gap;
 mod gui;
+mod input;
 mod puzzle;
 mod three;
 mod time;

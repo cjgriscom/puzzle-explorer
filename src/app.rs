@@ -13,6 +13,7 @@ use crate::color::{ORBIT_COLORS, SINGLETON_COLOR, color_to_hex};
 use crate::dreadnaut::DreadnautManager;
 use crate::gap::{GapManager, GapState};
 use crate::gui::{OrbitAnalysisState, PuzzleParams, toggle};
+use crate::input::{CameraInputState, handle_camera_input};
 use crate::puzzle::{GeometryParams, GeometryResult, OrbitParams, OrbitResult, PolyLine};
 use crate::three::{
     BufferAttribute, BufferGeometry, CanvasTexture, Group, Line, LineBasicMaterial, LineLoop, Mesh,
@@ -173,6 +174,15 @@ impl ThreeState {
 
     pub fn zoom(&mut self, scroll_y: f64) {
         let factor = if scroll_y > 0.0 { 0.92 } else { 1.08 };
+        self.cam_dist = (self.cam_dist * factor).clamp(1.5, 20.0);
+        self.apply_view_transform();
+    }
+
+    pub fn zoom_by_scale(&mut self, scale_delta: f64, sensitivity: f64) {
+        if scale_delta <= 0.0 {
+            return;
+        }
+        let factor = scale_delta.powf(-sensitivity);
         self.cam_dist = (self.cam_dist * factor).clamp(1.5, 20.0);
         self.apply_view_transform();
     }
@@ -448,10 +458,7 @@ pub struct PuzzleApp {
     compute_output: Rc<RefCell<String>>,
     pending_response: Rc<RefCell<Option<WorkerResponse>>>,
     pending_message: Option<WorkerMessage>,
-    is_rotating_drag: bool,
-    is_panning_drag: bool,
-    drag_started_outside_ui: bool,
-    last_mouse_pos: [f32; 2],
+    camera_input: CameraInputState,
     stored_geometry: Option<GeometryResult>,
     geometry_index: usize,
     anim: Option<AnimState>,
@@ -493,10 +500,7 @@ impl PuzzleApp {
             compute_output: Rc::new(RefCell::new("Ready".to_string())),
             pending_response: Rc::new(RefCell::new(None)),
             pending_message: None,
-            is_rotating_drag: false,
-            is_panning_drag: false,
-            drag_started_outside_ui: false,
-            last_mouse_pos: [0.0, 0.0],
+            camera_input: CameraInputState::default(),
             stored_geometry: None,
             geometry_index: 0,
             anim: None,
@@ -764,67 +768,9 @@ impl eframe::App for PuzzleApp {
             self.update_animation();
         }
 
-        // -- 3D mouse controls ---
-        let pointer_over_ui = ctx.is_pointer_over_area();
+        // -- 3D mouse / touch controls ---
         let anim_active = self.anim.is_some();
-
-        let primary_down = ctx.input(|i| i.pointer.primary_down());
-        let middle_down = ctx.input(|i| i.pointer.middle_down());
-        let any_down = primary_down || middle_down;
-        let drag_started_now = ctx.input(|i| i.pointer.any_pressed());
-        if drag_started_now {
-            self.drag_started_outside_ui = !pointer_over_ui;
-        }
-
-        if !any_down {
-            self.drag_started_outside_ui = false;
-        }
-
-        // Dragging logic - if mouse leaves UI during drag, prevent three from responding
-        if !anim_active && self.drag_started_outside_ui {
-            if let Some(pos) = ctx.input(|i| i.pointer.interact_pos()) {
-                if primary_down && !middle_down {
-                    if self.is_rotating_drag {
-                        let dx = (pos.x - self.last_mouse_pos[0]) as f64 * 0.005;
-                        let dy = (pos.y - self.last_mouse_pos[1]) as f64 * 0.005;
-                        if let Some(three) = &self.three {
-                            three.rotate_drag(dx, dy);
-                        }
-                    }
-                    self.is_rotating_drag = true;
-                    self.is_panning_drag = false;
-                    self.last_mouse_pos = [pos.x, pos.y];
-                } else if middle_down && !primary_down {
-                    if self.is_panning_drag {
-                        let dx = (pos.x - self.last_mouse_pos[0]) as f64 * 0.25;
-                        let dy = (pos.y - self.last_mouse_pos[1]) as f64 * 0.25;
-                        if let Some(three) = &mut self.three {
-                            let viewport = ctx.input(|i| i.content_rect().size());
-                            three.pan_drag(dx, dy, [viewport.x, viewport.y]);
-                        }
-                    }
-                    self.is_panning_drag = true;
-                    self.is_rotating_drag = false;
-                    self.last_mouse_pos = [pos.x, pos.y];
-                } else {
-                    self.is_rotating_drag = false;
-                    self.is_panning_drag = false;
-                }
-            }
-        } else {
-            self.is_rotating_drag = false;
-            self.is_panning_drag = false;
-        }
-
-        // Zoom is independent of drag ownership, but still disabled over egui and during animation.
-        if !pointer_over_ui && !anim_active {
-            let scroll_y = ctx.input(|i| i.raw_scroll_delta.y);
-            if scroll_y != 0.0
-                && let Some(three) = &mut self.three
-            {
-                three.zoom(scroll_y as f64);
-            }
-        }
+        handle_camera_input(ctx, &mut self.three, anim_active, &mut self.camera_input);
 
         if let Some(three) = &mut self.three {
             three.sync_resize();
@@ -1158,6 +1104,11 @@ impl eframe::App for PuzzleApp {
                 ui.label("- Left-drag: rotate sphere");
                 ui.label("- Middle-drag: pan sphere");
                 ui.label("- Mouse wheel: zoom");
+                ui.separator();
+                ui.label("Touch controls:");
+                ui.label("- One-finger drag: rotate sphere");
+                ui.label("- Two-finger drag: pan sphere");
+                ui.label("- Pinch: zoom (reduced sensitivity)");
                 ui.separator();
                 ui.label("Rotation shortcuts:");
                 ui.label("- A: rotate axis A");
