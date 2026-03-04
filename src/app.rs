@@ -769,8 +769,7 @@ impl eframe::App for PuzzleApp {
         }
 
         // -- 3D mouse / touch controls ---
-        let anim_active = self.anim.is_some();
-        handle_camera_input(ctx, &mut self.three, anim_active, &mut self.camera_input);
+        handle_camera_input(ctx, &mut self.three, &mut self.camera_input);
 
         if let Some(three) = &mut self.three {
             three.sync_resize();

@@ -11,16 +11,15 @@ pub struct CameraInputState {
 pub fn handle_camera_input(
     ctx: &egui::Context,
     three: &mut Option<ThreeState>,
-    anim_active: bool,
     state: &mut CameraInputState,
 ) {
     let pointer_over_ui = ctx.is_pointer_over_area();
     let multi_touch = ctx.input(|i| i.multi_touch());
     let any_touches = ctx.input(|i| i.any_touches());
-    let using_multi_touch = !pointer_over_ui && !anim_active && multi_touch.is_some();
+    let using_multi_touch = !pointer_over_ui && multi_touch.is_some();
 
     // Touch input handling
-    if !pointer_over_ui && !anim_active && any_touches {
+    if !pointer_over_ui && any_touches {
         let pos = ctx.input(|i| i.pointer.interact_pos());
         let touch_pressed_now = ctx.input(|i| i.pointer.any_pressed());
 
@@ -75,7 +74,7 @@ pub fn handle_camera_input(
             state.drag_started_outside_ui = false;
         }
 
-        if !using_multi_touch && !anim_active && state.drag_started_outside_ui {
+        if !using_multi_touch && state.drag_started_outside_ui {
             if let Some(pos) = ctx.input(|i| i.pointer.interact_pos()) {
                 if primary_down && !middle_down {
                     if state.is_rotating_drag {
@@ -110,7 +109,7 @@ pub fn handle_camera_input(
             state.is_panning_drag = false;
         }
 
-        if !using_multi_touch && !pointer_over_ui && !anim_active && !any_touches {
+        if !using_multi_touch && !pointer_over_ui && !any_touches {
             let scroll_y = ctx.input(|i| i.raw_scroll_delta.y);
             if scroll_y != 0.0
                 && let Some(three) = three.as_mut()
