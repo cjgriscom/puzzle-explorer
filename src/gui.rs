@@ -18,11 +18,13 @@ pub struct PuzzleParams {
 pub struct OrbitAnalysisState {
     pub annotate_pieces: bool,
     pub number_pieces: bool,
+    pub fudged_mode: bool,
+    pub min_piece_angle_deg: f32,
+    pub min_piece_perimeter: f64,
     pub auto_update_orbits: bool,
     pub auto_update_groups: bool,
     pub orbits_stale: bool,
     pub groups_stale: bool,
-    pub requested_groups_update: bool, // Manually requested update using button
 }
 
 impl Default for OrbitAnalysisState {
@@ -30,11 +32,13 @@ impl Default for OrbitAnalysisState {
         Self {
             annotate_pieces: true,
             number_pieces: false,
+            fudged_mode: false,
+            min_piece_angle_deg: 5.0,
+            min_piece_perimeter: 0.02,
             auto_update_orbits: false,
             auto_update_groups: false,
             orbits_stale: false,
             groups_stale: false,
-            requested_groups_update: false,
         }
     }
 }
@@ -47,7 +51,7 @@ impl Default for PuzzleParams {
             p: 1,
             q: 5,
             manual_axis_angle: false,
-            manual_axis_angle_deg: 63.4349,
+            manual_axis_angle_deg: 119.87,
             manual_max_iterations: 15,
             colat_a: 109.5,
             colat_b: 109.5,

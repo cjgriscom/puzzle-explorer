@@ -1,5 +1,5 @@
+use crate::circle::{Arc, Circle};
 use crate::math::{PI, TAU, norm_ang};
-use crate::circle::{Circle, Arc};
 use glam::DVec3;
 use std::collections::HashSet;
 
@@ -7,6 +7,17 @@ use std::collections::HashSet;
 
 pub struct Face {
     pub center: DVec3,
+    pub perimeter: f32,
+    pub min_angle: f32,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum PolygonOptions {
+    Default,
+    FudgedMode {
+        min_piece_perimeter: f64,
+        min_piece_angle_rad: Option<f32>,
+    },
 }
 
 struct GraphEdge {
@@ -22,9 +33,15 @@ struct GraphNode {
     edges: Vec<GraphEdge>,
 }
 
-fn find_or_create_node(nodes: &mut Vec<GraphNode>, v: DVec3) -> usize {
+impl PolygonOptions {
+    pub fn disable_euler_check(&self) -> bool {
+        matches!(self, PolygonOptions::FudgedMode { .. })
+    }
+}
+
+fn find_or_create_node(nodes: &mut Vec<GraphNode>, v: DVec3, tolerance: f64) -> usize {
     for (i, n) in nodes.iter().enumerate() {
-        if n.pos.distance(v) < 1e-4 {
+        if n.pos.distance(v) < tolerance {
             return i;
         }
     }
@@ -35,9 +52,18 @@ fn find_or_create_node(nodes: &mut Vec<GraphNode>, v: DVec3) -> usize {
     nodes.len() - 1
 }
 
-pub fn get_poly_centroids(circles: &[Circle], arcs: &[Arc]) -> Result<Vec<Face>, String> {
+pub fn get_poly_centroids(
+    circles: &[Circle],
+    arcs: &[Arc],
+    options: PolygonOptions,
+) -> Result<Vec<Face>, String> {
     // Step 1: Find intersection cuts for each arc
     let mut cuts: Vec<Vec<f64>> = arcs.iter().map(|a| vec![0.0, a.l]).collect();
+
+    let node_tol = match options {
+        PolygonOptions::Default => 1e-4,
+        PolygonOptions::FudgedMode { .. } => 1e-6,
+    };
 
     for i in 0..arcs.len() {
         for j in (i + 1)..arcs.len() {
@@ -78,8 +104,8 @@ pub fn get_poly_centroids(circles: &[Circle], arcs: &[Arc]) -> Result<Vec<Face>,
             let e = unique[k + 1];
             let p1 = c.circ_pt(arcs[i].s + s);
             let p2 = c.circ_pt(arcs[i].s + e);
-            let idx1 = find_or_create_node(&mut nodes, p1);
-            let idx2 = find_or_create_node(&mut nodes, p2);
+            let idx1 = find_or_create_node(&mut nodes, p1, node_tol);
+            let idx2 = find_or_create_node(&mut nodes, p2, node_tol);
             if idx1 == idx2 {
                 continue;
             }
@@ -219,6 +245,7 @@ pub fn get_poly_centroids(circles: &[Circle], arcs: &[Arc]) -> Result<Vec<Face>,
     let mut faces: Vec<Face> = Vec::new();
     let mut visited: HashSet<(usize, usize)> = HashSet::new();
     let mut skipped_faces = 0;
+    let track_endpoint_angles = matches!(options, PolygonOptions::FudgedMode { .. });
 
     for i in 0..nodes.len() {
         for j in 0..nodes[i].edges.len() {
@@ -256,11 +283,11 @@ pub fn get_poly_centroids(circles: &[Circle], arcs: &[Arc]) -> Result<Vec<Face>,
                 }
             }
 
-            let old_method = false;
-
             if !fail && curr == i && curr_edge_idx == j && path.len() >= 2 {
                 let mut perimeter = 0.0;
+                let mut min_angle = TAU as f32;
                 let mut sum = DVec3::ZERO;
+                let mut rough_endpoint_angles = Vec::new();
 
                 for k in 0..path.len() {
                     let p1 = nodes[path[k].0].pos;
@@ -269,38 +296,75 @@ pub fn get_poly_centroids(circles: &[Circle], arcs: &[Arc]) -> Result<Vec<Face>,
                     // Rough perimeter estimate for eliminating tiny faces
                     perimeter += p1.distance(p2);
 
-                    if old_method {
-                        sum += (p1 + p2).normalize() * p1.angle_between(p2);
-                    } else {
-                        let edge = &nodes[path[k].0].edges[path[k].1];
-                        let arc_idx = edge.arc_idx;
-                        let arc = &arcs[arc_idx];
-                        let c = &circles[arc.circ_idx];
+                    let edge = &nodes[path[k].0].edges[path[k].1];
+                    let arc_idx = edge.arc_idx;
+                    let arc = &arcs[arc_idx];
+                    let c = &circles[arc.circ_idx];
 
-                        // Get circle angles of p1 and p2
-                        let ang1 = c.pt_ang(p1);
-                        let ang2 = c.pt_ang(p2);
-                        let mut da1 = norm_ang(ang1 - arc.s);
-                        let mut da2 = norm_ang(ang2 - arc.s);
+                    // Get circle angles of p1 and p2
+                    let ang1 = c.pt_ang(p1);
+                    let ang2 = c.pt_ang(p2);
+                    let mut da1 = norm_ang(ang1 - arc.s);
+                    let mut da2 = norm_ang(ang2 - arc.s);
 
-                        // Ensure shorter path between angles
-                        if (da2 - da1).abs() > PI {
-                            if da1 < da2 {
-                                da1 += TAU;
-                            } else {
-                                da2 += TAU;
-                            }
+                    // Ensure shorter path between angles
+                    if (da2 - da1).abs() > PI {
+                        if da1 < da2 {
+                            da1 += TAU;
+                        } else {
+                            da2 += TAU;
                         }
+                    }
 
-                        // Integral of arc between p1 and p2
-                        let v = c.arc_integral(arc, da1, da2);
-                        let angle = norm_ang(da2 - da1).min(norm_ang(da1 - da2));
-                        sum += v * angle;
+                    // Integral of arc between p1 and p2
+                    let v = c.arc_integral(arc, da1, da2);
+                    let angle = norm_ang(da2 - da1).min(norm_ang(da1 - da2));
+                    sum += v * angle;
+
+                    rough_endpoint_angles.push((
+                        c.arc_pt_at_ang(arc, da1) - c.arc_pt_at_ang(arc, da2 * 0.01 + da1 * 0.99),
+                        c.arc_pt_at_ang(arc, da2 * 0.99 + da1 * 0.01) - c.arc_pt_at_ang(arc, da2),
+                    ));
+                }
+
+                // Measure the sharpest angle using rough endpoint tangents from
+                // the arc-integral loop above.
+                if track_endpoint_angles && rough_endpoint_angles.len() == path.len() {
+                    for k in 0..path.len() {
+                        let prev_k = (k + path.len() - 1) % path.len();
+
+                        // Previous edge "end" tangent points away from this vertex
+                        // toward the previous node.
+                        let to_prev = rough_endpoint_angles[prev_k].1.normalize();
+                        // Current edge "start" tangent currently points from near-start
+                        // to start, so negate to get away from this vertex.
+                        let to_next = (-rough_endpoint_angles[k].0).normalize();
+
+                        // Use the actual corner angle at this vertex.
+                        // (Do not take abs(dot): that would fold obtuse angles into acute.)
+                        let ang = to_prev.dot(to_next).clamp(-1.0, 1.0).acos() as f32;
+                        if ang < min_angle {
+                            min_angle = ang;
+                        }
                     }
                 }
 
+                let (min_piece_perimeter, min_piece_angle_rad) = match options {
+                    PolygonOptions::Default => (0.02, None),
+                    PolygonOptions::FudgedMode {
+                        min_piece_perimeter,
+                        min_piece_angle_rad,
+                        ..
+                    } => (min_piece_perimeter, min_piece_angle_rad),
+                };
+
+                let min_angle_satisfied = match min_piece_angle_rad {
+                    Some(required) => min_angle > required,
+                    None => true,
+                };
+
                 // Filter out tiny faces
-                if perimeter > 0.02 {
+                if perimeter > min_piece_perimeter && min_angle_satisfied {
                     // Check for near-duplicates
                     // TODO figure out why this happens in the first place
                     //      4, 4, 1/4, 62°
@@ -314,6 +378,8 @@ pub fn get_poly_centroids(circles: &[Circle], arcs: &[Arc]) -> Result<Vec<Face>,
                     if !has_duplicate {
                         faces.push(Face {
                             center: sum.normalize(),
+                            perimeter: perimeter as f32,
+                            min_angle,
                         });
                     } else {
                         skipped_faces += 1;
@@ -330,7 +396,7 @@ pub fn get_poly_centroids(circles: &[Circle], arcs: &[Arc]) -> Result<Vec<Face>,
     let f = faces.len() + skipped_faces;
     if v == 0 && f == 0 && e == 0 {
         return Err("Polygon detection failed - no intersections found".to_string());
-    } else if v + f != e + 2 {
+    } else if !options.disable_euler_check() && v + f != e + 2 {
         return Err(format!(
             "Polygon detection failed - Euler's formula mismatch: V={} E={} F={} (expected V-E+F=2)",
             v, e, f
@@ -343,7 +409,7 @@ pub fn get_poly_centroids(circles: &[Circle], arcs: &[Arc]) -> Result<Vec<Face>,
 #[cfg(test)]
 mod tests {
     use super::*;
-	use crate::geometry::{derive_axis_angle, compute_arcs, merge_arcs};
+    use crate::geometry::{compute_arcs, derive_axis_angle, merge_arcs};
 
     fn get_poly_centroids_for(
         n_a: u32,
@@ -364,7 +430,7 @@ mod tests {
             merged_arcs.len()
         );*/
 
-        get_poly_centroids(&circles, &merged_arcs)
+        get_poly_centroids(&circles, &merged_arcs, PolygonOptions::Default)
     }
 
     #[test]
@@ -436,5 +502,4 @@ mod tests {
             }
         }
     }
-
 }

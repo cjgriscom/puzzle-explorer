@@ -1,9 +1,9 @@
+use crate::circle::{Arc, Circle};
+use crate::math::{PI, TAU, norm_ang};
 use glam::DVec3;
 use std::collections::BTreeMap;
-use crate::math::{PI, TAU, norm_ang};
-use crate::circle::{Circle, Arc};
 
-const AUTO_MAX_ITERS: usize = 100;
+const AUTO_MAX_ITERS: usize = 35;
 pub struct Interval {
     pub s: f64,
     pub l: f64,
@@ -314,4 +314,3 @@ pub fn merge_arcs(arcs: &[Arc]) -> Vec<Arc> {
     }
     merged
 }
-

@@ -5,8 +5,8 @@ use wasm_bindgen::JsCast;
 use wasm_bindgen::prelude::*;
 use web_sys::{HtmlCanvasElement, MessageEvent, Worker, WorkerOptions, window};
 
-use puzzle_explorer_math::geometry::{self, derive_axis_angle};
 use puzzle_explorer_math::circle::Circle;
+use puzzle_explorer_math::geometry::{self, derive_axis_angle};
 use puzzle_explorer_math::math::TAU;
 
 use crate::color::{ORBIT_COLORS, SINGLETON_COLOR, color_to_hex};
@@ -148,7 +148,9 @@ impl ThreeState {
             return;
         }
 
-        if (width - self.viewport_size[0]).abs() < 0.5 && (height - self.viewport_size[1]).abs() < 0.5 {
+        if (width - self.viewport_size[0]).abs() < 0.5
+            && (height - self.viewport_size[1]).abs() < 0.5
+        {
             return;
         }
 
@@ -205,7 +207,14 @@ impl ThreeState {
         }
     }
 
-    fn add_line_to_group(&self, grp: &Group, points: &[[f32; 3]], mul: f32, is_loop: bool, color: u32) {
+    fn add_line_to_group(
+        &self,
+        grp: &Group,
+        points: &[[f32; 3]],
+        mul: f32,
+        is_loop: bool,
+        color: u32,
+    ) {
         let geometry = BufferGeometry::new();
         let mut flat = Vec::with_capacity(points.len() * 3);
         for p in points {
@@ -239,7 +248,9 @@ impl ThreeState {
             // Count members per orbit
             let mut counts = vec![0usize; n_orbits];
             for &oi in &orbit_result.face_orbit_indices {
-                counts[oi] += 1;
+                if let Some(oi) = oi {
+                    counts[oi] += 1
+                }
             }
             let mut ci = 0;
             for oi in 0..n_orbits {
@@ -254,7 +265,10 @@ impl ThreeState {
 
         let dot_geo = SphereGeometry::new(0.038, 12, 12);
         for (fi, pos) in orbit_result.face_positions.iter().enumerate() {
-            let oi = orbit_result.face_orbit_indices[fi];
+            let oi = match orbit_result.face_orbit_indices[fi] {
+                Some(oi) => oi,
+                None => continue,
+            };
             let color = if orbit_is_singleton[oi] {
                 SINGLETON_COLOR.1
             } else {
@@ -351,7 +365,13 @@ impl ThreeState {
         // Boundary circle
         if let Some(circ) = boundary_circle {
             let pts = circ.sample_arc(0.0, TAU, 128);
-            self.add_line_to_group(&static_grp, &pts, DISP_R as f32, true, crate::color::ARC_COLOR);
+            self.add_line_to_group(
+                &static_grp,
+                &pts,
+                DISP_R as f32,
+                true,
+                crate::color::ARC_COLOR,
+            );
         }
 
         let pt_dot = |p: &[f32; 3]| -> f64 {
@@ -393,13 +413,18 @@ impl ThreeState {
 
             for (run_pts, inside) in runs {
                 let grp = if inside { &rot_grp } else { &static_grp };
-                self.add_line_to_group(grp, &run_pts, DISP_R as f32, false, crate::color::ARC_COLOR);
+                self.add_line_to_group(
+                    grp,
+                    &run_pts,
+                    DISP_R as f32,
+                    false,
+                    crate::color::ARC_COLOR,
+                );
             }
         }
 
         (static_grp, rot_grp)
     }
-
 }
 
 fn lerp_normalize(a: &[f32; 3], b: &[f32; 3], t: f32) -> [f32; 3] {
@@ -634,6 +659,9 @@ impl PuzzleApp {
             colat_b: self.params.colat_b,
             axis_angle_override: self.axis_angle_override(),
             max_iterations_cap: self.max_iterations_cap_override(),
+            fudged_mode: self.orbit_state.fudged_mode,
+            min_piece_angle_deg: self.orbit_state.min_piece_angle_deg,
+            min_piece_perimeter: self.orbit_state.min_piece_perimeter,
         };
         self.post_message(WorkerMessage::ComputeOrbits(params));
     }
@@ -676,8 +704,7 @@ impl PuzzleApp {
             TAU / n as f64
         };
 
-        let boundary_circle =
-            Circle::new(glam::DVec3::new(axis[0], axis[1], axis[2]), colat);
+        let boundary_circle = Circle::new(glam::DVec3::new(axis[0], axis[1], axis[2]), colat);
 
         let three = match &self.three {
             Some(t) => t,
@@ -849,8 +876,14 @@ impl eframe::App for PuzzleApp {
 
                     let mut dreadnaut_batch = Vec::new();
                     for (oi, gens) in data.generators.iter().enumerate() {
-                        let n_vertices =
-                            data.face_orbit_indices.iter().filter(|&&i| i == oi).count();
+                        let n_vertices = data
+                            .face_orbit_indices
+                            .iter()
+                            .filter(|&&foi| match foi {
+                                Some(i) => i == oi,
+                                None => false,
+                            })
+                            .count();
                         if n_vertices > 1 && !gens.is_empty() {
                             self.request_counter += 1;
                             let req_id = self.request_counter;
@@ -893,14 +926,14 @@ impl eframe::App for PuzzleApp {
 
                 if (self.orbit_state.auto_update_groups || group_update_requested)
                     && let Some(orbit) = &self.orbit_result
-                    && let None = self.gap_cache.get(&dreadnaut_res) {
-                        self.request_counter += 1;
-                        let new_req_id = self.request_counter;
-                        self.pending_gap_requests
-                            .insert(new_req_id, dreadnaut_res);
-                        let cmd = GapManager::construct_group_cmd(&orbit.generators[oi]);
-                        self.gap_manager.send_queued_command(new_req_id, &cmd);
-                    }
+                    && let None = self.gap_cache.get(&dreadnaut_res)
+                {
+                    self.request_counter += 1;
+                    let new_req_id = self.request_counter;
+                    self.pending_gap_requests.insert(new_req_id, dreadnaut_res);
+                    let cmd = GapManager::construct_group_cmd(&orbit.generators[oi]);
+                    self.gap_manager.send_queued_command(new_req_id, &cmd);
+                }
             }
         }
 
@@ -1192,6 +1225,63 @@ impl eframe::App for PuzzleApp {
 
                 ui.separator();
 
+                let mut filter_changed = false;
+                ui.horizontal(|ui| {
+                    if ui
+                        .add(toggle(&mut self.orbit_state.fudged_mode))
+                        .changed()
+                    {
+                        filter_changed = true;
+                    }
+                    ui.label("Fudged Mode (experimental)");
+                });
+
+                if self.orbit_state.fudged_mode {
+                    ui.horizontal(|ui| {
+                        ui.label("Min Piece Angle");
+                        let changed = ui
+                            .add(
+                                egui::DragValue::new(&mut self.orbit_state.min_piece_angle_deg)
+                                    .range(0.1..=10.0)
+                                    .speed(0.02)
+                                    .suffix(" deg"),
+                            )
+                            .changed();
+                        if changed {
+                            filter_changed = true;
+                        }
+                    });
+
+                    ui.horizontal(|ui| {
+                        ui.label("Min Piece Perimeter");
+                        let changed = ui
+                            .add(
+                                egui::DragValue::new(&mut self.orbit_state.min_piece_perimeter)
+                                    .range(0.0..=10.0)
+                                    .speed(0.001),
+                            )
+                            .changed();
+                        if changed {
+                            filter_changed = true;
+                        }
+                    });
+                }
+
+                if filter_changed {
+                    self.orbit_state.orbits_stale = true;
+                    self.orbit_state.groups_stale = true;
+                    self.orbit_dreadnaut.clear();
+                    self.orbit_result = None;
+                    if let Some(three) = &self.three {
+                        three.clear_face_dots();
+                    }
+                    if self.orbit_state.auto_update_orbits {
+                        self.spawn_orbit_worker();
+                    }
+                }
+                
+                ui.separator();
+
                 ui.horizontal(|ui| {
                     if ui
                         .add_enabled(
@@ -1250,7 +1340,10 @@ impl eframe::App for PuzzleApp {
                                         .face_orbit_indices
                                         .iter()
                                         .enumerate()
-                                        .filter(|&(_, &o)| o == oi)
+                                        .filter(|&(_, &foi)| match foi {
+                                            Some(i) => i == oi,
+                                            None => false,
+                                        })
                                         .map(|(i, _)| i + 1)
                                         .collect::<Vec<usize>>(),
                                 )

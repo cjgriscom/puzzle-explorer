@@ -37,6 +37,9 @@ pub struct OrbitParams {
     pub colat_b: f32,
     pub axis_angle_override: Option<f64>,
     pub max_iterations_cap: Option<u32>,
+    pub fudged_mode: bool,
+    pub min_piece_angle_deg: f32,
+    pub min_piece_perimeter: f64,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -44,6 +47,6 @@ pub struct OrbitResult {
     pub orbit_count: usize,
     pub face_count: usize,
     pub face_positions: Vec<[f32; 3]>,
-    pub face_orbit_indices: Vec<usize>,
+    pub face_orbit_indices: Vec<Option<usize>>,
     pub generators: Vec<Vec<Vec<Vec<usize>>>>,
 }

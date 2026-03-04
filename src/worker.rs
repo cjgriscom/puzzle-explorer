@@ -1,10 +1,10 @@
-use puzzle_explorer_math::geometry::{
-    compute_arcs, derive_axis_angle, merge_arcs,
-};
+use puzzle_explorer_math::geometry::{compute_arcs, derive_axis_angle, merge_arcs};
 use puzzle_explorer_math::math::TAU;
-use puzzle_explorer_math::orbit::compute_orbit_analysis;
 
 use crate::puzzle::{GeometryParams, GeometryResult, OrbitParams, OrbitResult, PolyLine};
+use puzzle_explorer_math::orbit::{OrbitAnalysisInput, compute_orbit_analysis};
+use puzzle_explorer_math::polygon::PolygonOptions;
+
 use wasm_bindgen::prelude::*;
 
 use serde::{Deserialize, Serialize};
@@ -83,20 +83,32 @@ pub fn worker_handle_msg(msg: JsValue) -> JsValue {
                     let colat_a = params.colat_a.to_radians() as f64;
                     let colat_b = params.colat_b.to_radians() as f64;
 
-                    let (circles, arcs) =
-                        compute_arcs(
-                            axis_angle,
-                            colat_a,
-                            colat_b,
-                            params.n_a,
-                            params.n_b,
-                            params.max_iterations_cap.map(|cap| cap as usize),
-                        );
+                    let (circles, arcs) = compute_arcs(
+                        axis_angle,
+                        colat_a,
+                        colat_b,
+                        params.n_a,
+                        params.n_b,
+                        params.max_iterations_cap.map(|cap| cap as usize),
+                    );
                     let arcs = merge_arcs(&arcs);
 
-                    let analysis = match compute_orbit_analysis(
-                        &circles, &arcs, params.n_a, params.n_b, axis_angle, colat_a, colat_b,
-                    ) {
+                    let analysis = match compute_orbit_analysis(OrbitAnalysisInput {
+                        circles: &circles,
+                        arcs: &arcs,
+                        n_a: params.n_a,
+                        n_b: params.n_b,
+                        axis_angle_rad: axis_angle,
+                        colat_a,
+                        colat_b,
+                        options: match params.fudged_mode {
+                            true => PolygonOptions::FudgedMode {
+                                min_piece_angle_rad: Some(params.min_piece_angle_deg.to_radians()),
+                                min_piece_perimeter: params.min_piece_perimeter,
+                            },
+                            false => PolygonOptions::Default,
+                        },
+                    }) {
                         Ok(a) => a,
                         Err(e) => {
                             let r = WorkerResponse::Error(e);
@@ -111,10 +123,10 @@ pub fn worker_handle_msg(msg: JsValue) -> JsValue {
                         .collect();
 
                     let n_faces = face_positions.len();
-                    let mut face_orbit_indices = vec![0usize; n_faces];
+                    let mut face_orbit_indices = vec![None; n_faces];
                     for (oi, members) in analysis.orbits.iter().enumerate() {
                         for &fi in members {
-                            face_orbit_indices[fi] = oi;
+                            face_orbit_indices[fi] = Some(oi);
                         }
                     }
 

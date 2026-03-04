@@ -1,32 +1,49 @@
+use crate::circle::{Arc, Circle};
+use crate::geometry::rotate_v;
 use crate::math::TAU;
-use crate::geometry::{rotate_v};
-use crate::polygon::get_poly_centroids;
-use crate::circle::{Circle, Arc};
+use crate::polygon::{PolygonOptions, get_poly_centroids};
 use glam::DVec3;
 use std::collections::HashSet;
 
 // --- Orbit Analysis ---
 
 pub struct OrbitAnalysis {
+    pub degenerate_faces: HashSet<usize>,
     pub face_positions: Vec<DVec3>,
     pub orbits: Vec<Vec<usize>>,
     pub generators: Vec<Vec<Vec<Vec<usize>>>>,
 }
 
-pub fn compute_orbit_analysis(
-    circles: &[Circle],
-    arcs: &[Arc],
-    n_a: u32,
-    n_b: u32,
-    axis_angle_rad: f64,
-    colat_a: f64,
-    colat_b: f64,
-) -> Result<OrbitAnalysis, String> {
-    let faces = get_poly_centroids(circles, arcs)?;
+pub struct OrbitAnalysisInput<'a> {
+    pub circles: &'a [Circle],
+    pub arcs: &'a [Arc],
+    pub n_a: u32,
+    pub n_b: u32,
+    pub axis_angle_rad: f64,
+    pub colat_a: f64,
+    pub colat_b: f64,
+    pub options: PolygonOptions,
+}
+
+pub fn compute_orbit_analysis(input: OrbitAnalysisInput<'_>) -> Result<OrbitAnalysis, String> {
+    let OrbitAnalysisInput {
+        circles,
+        arcs,
+        n_a,
+        n_b,
+        axis_angle_rad,
+        colat_a,
+        colat_b,
+        options,
+    } = input;
+    let faces = get_poly_centroids(circles, arcs, options)?;
     let n_faces = faces.len();
+
+    let fudged_mode = matches!(options, PolygonOptions::FudgedMode { .. });
 
     if n_faces == 0 {
         return Ok(OrbitAnalysis {
+            degenerate_faces: HashSet::new(),
             face_positions: vec![],
             orbits: vec![],
             generators: vec![],
@@ -175,39 +192,75 @@ pub fn compute_orbit_analysis(
     };
 
     let mut generators = Vec::new();
+    let mut orbits_final = Vec::new();
+    let mut degenerate_faces = HashSet::new();
 
     for members in orbits.iter() {
         if members.len() == 1 {
             generators.push(vec![]);
+            orbits_final.push(members.clone());
         } else {
             let gen_a = perm_to_0_indexed_cycles(&perm_a, members);
             let gen_b = perm_to_0_indexed_cycles(&perm_b, members);
-            let mut gens_for_orbit = Vec::new();
-            if !gen_a.is_empty() {
-                if gen_a.iter().any(|c| c.len() != n_a as usize) {
-                    return Err(format!(
-                        "Orbit Cycle Length mismatch: expected cycle length of {} for move A.",
-                        n_a
-                    ));
-                }
-                gens_for_orbit.push(gen_a);
+            let gen_a_cycle_length_mismatch = gen_a.iter().any(|c| c.len() != n_a as usize);
+            let gen_b_cycle_length_mismatch = gen_b.iter().any(|c| c.len() != n_b as usize);
+            if gen_a_cycle_length_mismatch && !fudged_mode {
+                return Err(format!(
+                    "Orbit Cycle Length mismatch: expected cycle length of {} for move A.",
+                    n_a
+                ));
             }
-            if !gen_b.is_empty() {
-                if gen_b.iter().any(|c| c.len() != n_b as usize) {
-                    return Err(format!(
-                        "Orbit Cycle Length mismatch: expected cycle length of {} for move B.",
-                        n_b
-                    ));
-                }
-                gens_for_orbit.push(gen_b);
+            if gen_b_cycle_length_mismatch && !fudged_mode {
+                return Err(format!(
+                    "Orbit Cycle Length mismatch: expected cycle length of {} for move B.",
+                    n_b
+                ));
             }
-            generators.push(gens_for_orbit);
+
+            if fudged_mode {
+                if gen_a_cycle_length_mismatch || gen_b_cycle_length_mismatch {
+                    for &m in members {
+                        degenerate_faces.insert(m);
+                    }
+                    continue;
+                }
+
+                /*
+                let int_scale_factor = 100f32; // Cvt to int to sort and set tolerance.
+                let mut face_perimeters = Vec::new();
+                for &m in members {
+                    face_perimeters.push((faces[m].perimeter * int_scale_factor) as i32);
+                }
+
+                face_perimeters.sort();
+                if face_perimeters[0] != face_perimeters[face_perimeters.len() - 1] {
+                    for &m in members {
+                        degenerate_faces.insert(m);
+                    }
+                    continue;
+                }
+                */
+
+                orbits_final.push(members.clone());
+                generators.push([gen_a, gen_b].to_vec());
+            } else {
+                let mut gens_for_orbit = Vec::new();
+                if !gen_a.is_empty() {
+                    gens_for_orbit.push(gen_a);
+                }
+                if !gen_b.is_empty() {
+                    gens_for_orbit.push(gen_b);
+                }
+                generators.push(gens_for_orbit);
+                orbits_final.push(members.clone());
+            }
         }
     }
 
     Ok(OrbitAnalysis {
+        degenerate_faces,
         face_positions: base_pos,
-        orbits,
+        orbits: orbits_final,
         generators,
     })
 }
