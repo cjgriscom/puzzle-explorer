@@ -28,6 +28,16 @@ const R: f64 = 1.0; // Radius of sphere
 const DISP_R: f64 = R * 1.004; // Dist of arcs from sphere
 const LABEL_R: f64 = R * 1.04; // Dist. of orbit labels from sphere
 
+const MIN_N: u32 = 2;
+const MAX_N: u32 = 8;
+const MIN_COLAT: f32 = 10.0;
+const MAX_COLAT: f32 = 170.0;
+const COLAT_STEP: f64 = 0.1;
+const COLAT_DECIMALS: usize = 1;
+const COLAT_SPEED: f64 = 0.05;
+const AXIS_ANGLE_SPEED: f64 = 0.01;
+const AXIS_ANGLE_DECIMALS: usize = 4;
+
 // --- Animation State ---
 
 struct AnimState {
@@ -56,6 +66,7 @@ pub struct ThreeState {
     group: Group,
     cut_group: Group,
     face_group: Group,
+    axis_group: Group,
     cam_dist: f64,
     pan_screen: [f64; 2],
     base_group_y: f64,
@@ -111,6 +122,9 @@ impl ThreeState {
         let face_group = Group::new();
         group.add(&face_group);
 
+        let axis_group = Group::new();
+        group.add(&axis_group);
+
         group.rotateX(0.35);
         group.rotateY(-0.5);
         let base_group_y = -0.3;
@@ -124,6 +138,7 @@ impl ThreeState {
             group,
             cut_group,
             face_group,
+            axis_group,
             cam_dist,
             pan_screen: [0.0, 0.0],
             base_group_y,
@@ -214,6 +229,23 @@ impl ThreeState {
                 poly_line.is_loop,
                 crate::color::ARC_COLOR,
             );
+        }
+    }
+
+    pub fn update_axis_indicators(&self, axes: &[crate::puzzle::AxisDef], visible: bool) {
+        self.axis_group.clear();
+        if !visible {
+            return;
+        }
+        let len = DISP_R as f32 * 1.3;
+        for (i, axis) in axes.iter().enumerate() {
+            let color = crate::color::color_to_hex(&ORBIT_COLORS[i % ORBIT_COLORS.len()].1);
+            let d = axis.direction;
+            let points = [
+                [0.0, 0.0, 0.0],
+                [d[0] as f32 * len, d[1] as f32 * len, d[2] as f32 * len],
+            ];
+            self.add_line_to_group(&self.axis_group, &points, 1.0, false, color);
         }
     }
 
@@ -648,7 +680,7 @@ impl PuzzleApp {
             None => return vec![],
         };
 
-        vec![
+        let mut axes = vec![
             AxisDef {
                 colat: self.params.colat_a,
                 direction: [0.0, 0.0, 1.0],
@@ -659,7 +691,23 @@ impl PuzzleApp {
                 direction: [axis_angle.sin(), 0.0, axis_angle.cos()],
                 n: self.params.n_b,
             },
-        ]
+        ];
+
+        for ea in &self.params.extra_axes {
+            let pitch = ea.pitch_deg.to_radians();
+            let yaw = ea.yaw_deg.to_radians();
+            axes.push(AxisDef {
+                colat: ea.colat,
+                direction: [
+                    pitch.sin() * yaw.cos(),
+                    pitch.sin() * yaw.sin(),
+                    pitch.cos(),
+                ],
+                n: ea.n,
+            });
+        }
+
+        axes
     }
 
     fn spawn_geometry_worker(&mut self) {
@@ -800,6 +848,19 @@ impl eframe::App for PuzzleApp {
             if ctx.input(|i| i.key_pressed(egui::Key::B)) {
                 self.start_rotation(1, !shift);
             }
+            // C, D, E, F, G for extra axes
+            let extra_keys = [
+                egui::Key::C,
+                egui::Key::D,
+                egui::Key::E,
+                egui::Key::F,
+                egui::Key::G,
+            ];
+            for (ki, key) in extra_keys.iter().enumerate() {
+                if ki < self.params.num_extra_axes as usize && ctx.input(|i| i.key_pressed(*key)) {
+                    self.start_rotation(2 + ki, !shift);
+                }
+            }
         }
 
         let mut geom_response = None;
@@ -815,6 +876,8 @@ impl eframe::App for PuzzleApp {
                     *self.compute_output.borrow_mut() = format!("{} arcs", data.lines.len());
                     if let Some(three) = &self.three {
                         three.update_geometry(&data);
+                        let axes = self.build_axes();
+                        three.update_axis_indicators(&axes, self.params.show_axes);
                     }
                     self.stored_geometry = Some(data);
 
@@ -917,11 +980,23 @@ impl eframe::App for PuzzleApp {
                 let mut changed = false;
 
                 ui.horizontal(|ui| {
+                    if ui
+                        .add(crate::gui::toggle(&mut self.params.show_axes))
+                        .changed()
+                        && let Some(three) = &self.three
+                    {
+                        let axes = self.build_axes();
+                        three.update_axis_indicators(&axes, self.params.show_axes);
+                    }
+                    ui.label("Show axes");
+                });
+
+                ui.horizontal(|ui| {
                     ui.label("nA:");
                     egui::ComboBox::from_id_salt("nA")
                         .selected_text(format!("{}", self.params.n_a))
                         .show_ui(ui, |ui| {
-                            for i in 2..=8 {
+                            for i in MIN_N..=MAX_N {
                                 if ui
                                     .selectable_value(&mut self.params.n_a, i, format!("{}", i))
                                     .changed()
@@ -934,7 +1009,7 @@ impl eframe::App for PuzzleApp {
                     egui::ComboBox::from_id_salt("nB")
                         .selected_text(format!("{}", self.params.n_b))
                         .show_ui(ui, |ui| {
-                            for i in 2..=8 {
+                            for i in MIN_N..=MAX_N {
                                 if ui
                                     .selectable_value(&mut self.params.n_b, i, format!("{}", i))
                                     .changed()
@@ -974,9 +1049,9 @@ impl eframe::App for PuzzleApp {
                         if ui
                             .add(
                                 egui::DragValue::new(&mut self.params.manual_axis_angle_deg)
-                                    .range(0.0001..=179.9999)
-                                    .speed(0.01)
-                                    .fixed_decimals(4)
+                                    .range(0.0..=180.0)
+                                    .speed(AXIS_ANGLE_SPEED)
+                                    .fixed_decimals(AXIS_ANGLE_DECIMALS)
                                     .suffix("°"),
                             )
                             .changed()
@@ -988,8 +1063,8 @@ impl eframe::App for PuzzleApp {
                         if ui
                             .add(
                                 egui::DragValue::new(&mut self.params.manual_max_iterations)
-                                    .range(1..=2000)
-                                    .speed(0.5),
+                                    .range(1..=150)
+                                    .speed(0.1),
                             )
                             .changed()
                         {
@@ -1043,17 +1118,20 @@ impl eframe::App for PuzzleApp {
                     && self.params.lock_cuts
                 {
                     self.params.colat_b = self.params.colat_a;
+                    for ea in &mut self.params.extra_axes {
+                        ea.colat = self.params.colat_a;
+                    }
                     changed = true;
                 }
 
                 ui.label(format!("Cut A: {:.1}\u{00B0}", self.params.colat_a));
                 if ui
                     .add(
-                        egui::Slider::new(&mut self.params.colat_a, 10.0..=170.0)
-                            .smallest_positive(0.1)
-                            .fixed_decimals(1)
-                            .step_by(0.1)
-                            .drag_value_speed(0.1)
+                        egui::Slider::new(&mut self.params.colat_a, MIN_COLAT..=MAX_COLAT)
+                            .smallest_positive(COLAT_STEP)
+                            .fixed_decimals(COLAT_DECIMALS)
+                            .step_by(COLAT_STEP)
+                            .drag_value_speed(COLAT_SPEED)
                             .show_value(true)
                             .trailing_fill(true),
                     )
@@ -1061,6 +1139,9 @@ impl eframe::App for PuzzleApp {
                 {
                     if self.params.lock_cuts {
                         self.params.colat_b = self.params.colat_a;
+                        for ea in &mut self.params.extra_axes {
+                            ea.colat = self.params.colat_a;
+                        }
                     }
                     changed = true;
                 }
@@ -1069,11 +1150,11 @@ impl eframe::App for PuzzleApp {
                 ui.add_enabled_ui(!self.params.lock_cuts, |ui| {
                     if ui
                         .add(
-                            egui::Slider::new(&mut self.params.colat_b, 10.0..=170.0)
-                                .smallest_positive(0.1)
-                                .fixed_decimals(1)
-                                .step_by(0.1)
-                                .drag_value_speed(0.1)
+                            egui::Slider::new(&mut self.params.colat_b, MIN_COLAT..=MAX_COLAT)
+                                .smallest_positive(COLAT_STEP)
+                                .fixed_decimals(COLAT_DECIMALS)
+                                .step_by(COLAT_STEP)
+                                .drag_value_speed(COLAT_SPEED)
                                 .show_value(true)
                                 .trailing_fill(true),
                         )
@@ -1081,6 +1162,9 @@ impl eframe::App for PuzzleApp {
                     {
                         if self.params.lock_cuts {
                             self.params.colat_a = self.params.colat_b;
+                            for ea in &mut self.params.extra_axes {
+                                ea.colat = self.params.colat_b;
+                            }
                         }
                         changed = true;
                     }
@@ -1088,6 +1172,118 @@ impl eframe::App for PuzzleApp {
 
                 if changed {
                     self.spawn_geometry_worker();
+                }
+
+                ui.separator();
+
+                // --- Additional Axes (Experimental) ---
+                let mut extra_changed = false;
+                ui.horizontal(|ui| {
+                    ui.label("Additional axes:");
+                    if ui
+                        .add(
+                            egui::DragValue::new(&mut self.params.num_extra_axes)
+                                .range(0..=5)
+                                .speed(0.05),
+                        )
+                        .changed()
+                    {
+                        let n = self.params.num_extra_axes as usize;
+                        while self.params.extra_axes.len() < n {
+                            let mut new_axis = crate::gui::ExtraAxisParams::default();
+                            if self.params.lock_cuts {
+                                new_axis.colat = self.params.colat_a;
+                            }
+                            self.params.extra_axes.push(new_axis);
+                        }
+                        self.params.extra_axes.truncate(n);
+                        extra_changed = true;
+                    }
+                    ui.label("(experimental)");
+                });
+
+                let axis_labels = ['C', 'D', 'E', 'F', 'G'];
+                for idx in 0..self.params.extra_axes.len() {
+                    ui.separator();
+
+                    let label = axis_labels.get(idx).copied().unwrap_or('?');
+                    ui.horizontal(|ui| {
+                        ui.label(format!("n{}:", label));
+                        egui::ComboBox::from_id_salt(format!("n{}", label))
+                            .selected_text(format!("{}", self.params.extra_axes[idx].n))
+                            .show_ui(ui, |ui| {
+                                for i in MIN_N..=MAX_N {
+                                    if ui
+                                        .selectable_value(
+                                            &mut self.params.extra_axes[idx].n,
+                                            i,
+                                            format!("{}", i),
+                                        )
+                                        .changed()
+                                    {
+                                        extra_changed = true;
+                                    }
+                                }
+                            });
+                        ui.label("Pitch:");
+                        if ui
+                            .add(
+                                egui::DragValue::new(&mut self.params.extra_axes[idx].pitch_deg)
+                                    .range(0.0..=180.0)
+                                    .speed(AXIS_ANGLE_SPEED)
+                                    .fixed_decimals(AXIS_ANGLE_DECIMALS)
+                                    .suffix("°"),
+                            )
+                            .changed()
+                        {
+                            extra_changed = true;
+                        }
+                        ui.label("Yaw:");
+                        if ui
+                            .add(
+                                egui::DragValue::new(&mut self.params.extra_axes[idx].yaw_deg)
+                                    .range(-180.0..=180.0)
+                                    .speed(AXIS_ANGLE_SPEED)
+                                    .fixed_decimals(AXIS_ANGLE_DECIMALS)
+                                    .suffix("°"),
+                            )
+                            .changed()
+                        {
+                            extra_changed = true;
+                        }
+                    });
+
+                    ui.label(format!(
+                        "Cut {}: {:.1}\u{00B0}",
+                        label, self.params.extra_axes[idx].colat
+                    ));
+                    ui.add_enabled_ui(!self.params.lock_cuts, |ui| {
+                        if ui
+                            .add(
+                                egui::Slider::new(
+                                    &mut self.params.extra_axes[idx].colat,
+                                    MIN_COLAT..=MAX_COLAT,
+                                )
+                                .smallest_positive(COLAT_STEP)
+                                .fixed_decimals(COLAT_DECIMALS)
+                                .step_by(COLAT_STEP)
+                                .drag_value_speed(COLAT_SPEED)
+                                .show_value(true)
+                                .trailing_fill(true),
+                            )
+                            .changed()
+                        {
+                            extra_changed = true;
+                        }
+                    });
+                }
+
+                if extra_changed {
+                    self.spawn_geometry_worker();
+                    if let Some(three) = &self.three {
+                        let axes = self.build_axes();
+                        three.update_axis_indicators(&axes, self.params.show_axes);
+                    }
                 }
 
                 ui.separator();

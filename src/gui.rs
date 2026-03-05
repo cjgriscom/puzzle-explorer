@@ -1,6 +1,25 @@
 // --- App State ---
 
 #[derive(Clone, Debug, PartialEq)]
+pub struct ExtraAxisParams {
+    pub pitch_deg: f64,
+    pub yaw_deg: f64,
+    pub colat: f32,
+    pub n: u32,
+}
+
+impl Default for ExtraAxisParams {
+    fn default() -> Self {
+        Self {
+            pitch_deg: 90.0,
+            yaw_deg: 0.0,
+            colat: 109.5,
+            n: 3,
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub struct PuzzleParams {
     pub n_a: u32,
     pub n_b: u32,
@@ -12,6 +31,10 @@ pub struct PuzzleParams {
     pub colat_a: f32,
     pub colat_b: f32,
     pub lock_cuts: bool,
+    pub show_axes: bool,
+    // Additional axes (experimental)
+    pub num_extra_axes: u32,
+    pub extra_axes: Vec<ExtraAxisParams>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -56,6 +79,9 @@ impl Default for PuzzleParams {
             colat_a: 109.5,
             colat_b: 109.5,
             lock_cuts: true,
+            show_axes: false,
+            num_extra_axes: 0,
+            extra_axes: Vec::new(),
         }
     }
 }
