@@ -1602,6 +1602,16 @@ impl eframe::App for PuzzleApp {
                         });
 
                     ui.horizontal(|ui| {
+                        if ui
+                            .button("Reset")
+                            .on_hover_text("Reset GAP worker")
+                            .clicked()
+                        {
+                            self.pending_gap_requests.clear();
+                            self.gap_cache.clear();
+                            self.gap_manager.reset();
+                            self.gap_manager.init(ctx.clone());
+                        }
                         ui.label("gap>");
                         let response = ui.add(
                             egui::TextEdit::singleline(&mut self.gap_input)

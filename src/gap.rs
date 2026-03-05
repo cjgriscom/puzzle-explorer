@@ -278,6 +278,24 @@ impl GapManager {
         self.try_send_next_job();
     }
 
+    pub fn reset(&mut self) {
+        if let Some(w) = self.worker.take() {
+            w.terminate();
+        }
+        self._on_message = None;
+        self._on_error = None;
+        self.int32_array = None;
+        self.uint8_array = None;
+        self.pending_messages.borrow_mut().clear();
+        self.queue.clear();
+        self.pending_commands.clear();
+        self.completed_jobs.clear();
+        self.current_buffer.clear();
+        self.current_job = None;
+        self.state = GapState::NotStarted;
+        self.output_history = String::from("GAP reset. Reinitializing...\n");
+    }
+
     pub fn reconstruct_generator_numbering_from_members(
         generators: &[Vec<Vec<usize>>],
         members: &[usize],
