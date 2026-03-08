@@ -11,8 +11,8 @@ use puzzle_explorer_math::math::TAU;
 
 use crate::color::{ORBIT_COLORS, SINGLETON_COLOR, color_to_hex};
 use crate::dreadnaut::DreadnautManager;
-use crate::gap::{GapManager, GapState};
-use crate::gui::{OrbitAnalysisState, PuzzleParams, toggle};
+use crate::gap::GapManager;
+use crate::gui::{OrbitAnalysisState, PuzzleParams};
 use crate::input::{CameraInputState, handle_camera_input};
 use crate::puzzle::{AxisDef, GeometryParams, GeometryResult, OrbitParams, OrbitResult, PolyLine};
 use crate::three::{
@@ -28,19 +28,19 @@ const R: f64 = 1.0; // Radius of sphere
 const DISP_R: f64 = R * 1.004; // Dist of arcs from sphere
 const LABEL_R: f64 = R * 1.04; // Dist. of orbit labels from sphere
 
-const MIN_N: u32 = 2;
-const MAX_N: u32 = 8;
-const MIN_COLAT: f32 = 10.0;
-const MAX_COLAT: f32 = 170.0;
-const COLAT_STEP: f64 = 0.1;
-const COLAT_DECIMALS: usize = 1;
-const COLAT_SPEED: f64 = 0.05;
-const AXIS_ANGLE_SPEED: f64 = 0.01;
-const AXIS_ANGLE_DECIMALS: usize = 4;
+pub(crate) const MIN_N: u32 = 2;
+pub(crate) const MAX_N: u32 = 8;
+pub(crate) const MIN_COLAT: f32 = 10.0;
+pub(crate) const MAX_COLAT: f32 = 170.0;
+pub(crate) const COLAT_STEP: f64 = 0.1;
+pub(crate) const COLAT_DECIMALS: usize = 1;
+pub(crate) const COLAT_SPEED: f64 = 0.05;
+pub(crate) const AXIS_ANGLE_SPEED: f64 = 0.01;
+pub(crate) const AXIS_ANGLE_DECIMALS: usize = 4;
 
 // --- Animation State ---
 
-struct AnimState {
+pub struct AnimState {
     axis: [f64; 3],
     target_angle: f64,
     start_time: f64,
@@ -481,20 +481,20 @@ fn lerp_normalize(a: &[f32; 3], b: &[f32; 3], t: f32) -> [f32; 3] {
 
 pub struct PuzzleApp {
     build_hash: String,
-    params: PuzzleParams,
-    orbit_state: OrbitAnalysisState,
-    three: Option<ThreeState>,
+    pub(crate) params: PuzzleParams,
+    pub(crate) orbit_state: OrbitAnalysisState,
+    pub(crate) three: Option<ThreeState>,
     worker: Option<Worker>,
     task_start_time: Option<f64>,
     is_computing: bool,
-    compute_output: Rc<RefCell<String>>,
+    pub(crate) compute_output: Rc<RefCell<String>>,
     pending_response: Rc<RefCell<Option<WorkerResponse>>>,
     pending_message: Option<WorkerMessage>,
     camera_input: CameraInputState,
     stored_geometry: Option<GeometryResult>,
     geometry_index: usize,
-    anim: Option<AnimState>,
-    orbit_result: Option<OrbitResult>,
+    pub(crate) anim: Option<AnimState>,
+    pub(crate) orbit_result: Option<OrbitResult>,
     _on_message: Option<Closure<dyn FnMut(MessageEvent)>>,
     _on_error: Option<Closure<dyn FnMut(MessageEvent)>>,
 
@@ -502,14 +502,14 @@ pub struct PuzzleApp {
     dreadnaut_data: DreadnautManager,
 
     // GAP worker
-    gap_manager: GapManager,
-    gap_input: String,
+    pub(crate) gap_manager: GapManager,
+    pub(crate) gap_input: String,
 
     request_counter: usize,
     pending_dreadnaut_requests: std::collections::HashMap<usize, (usize, usize)>, // req_id -> (orbit_index, geometry_index)
-    pending_gap_requests: std::collections::HashMap<usize, String>, // req_id -> dreadnaut hash
-    orbit_dreadnaut: std::collections::HashMap<usize, String>,
-    gap_cache: std::collections::HashMap<String, Option<crate::gap::GapGroupResult>>, // global table of dreadnaut hash -> gap result
+    pub(crate) pending_gap_requests: std::collections::HashMap<usize, String>, // req_id -> dreadnaut hash
+    pub(crate) orbit_dreadnaut: std::collections::HashMap<usize, String>,
+    pub(crate) gap_cache: std::collections::HashMap<String, Option<crate::gap::GapGroupResult>>, // global table of dreadnaut hash -> gap result
 }
 
 impl PuzzleApp {
@@ -651,6 +651,12 @@ impl PuzzleApp {
         }
     }
 
+    pub fn set_face_group_visible(&mut self, visible: bool) {
+        if let Some(three) = &self.three {
+            three.face_group.set_visible(visible);
+        }
+    }
+
     fn axis_angle_override(&self) -> Option<f64> {
         if self.params.manual_axis_angle {
             Some(self.params.manual_axis_angle_deg.to_radians())
@@ -667,7 +673,7 @@ impl PuzzleApp {
         }
     }
 
-    fn build_axes(&self) -> Vec<AxisDef> {
+    pub(crate) fn build_axes(&self) -> Vec<AxisDef> {
         let axis_angle = match self.axis_angle_override().or_else(|| {
             derive_axis_angle(
                 self.params.n_a,
@@ -710,7 +716,7 @@ impl PuzzleApp {
         axes
     }
 
-    fn spawn_geometry_worker(&mut self) {
+    pub(crate) fn spawn_geometry_worker(&mut self) {
         self.orbit_result = None;
         if let Some(three) = &self.three {
             three.clear_face_dots();
@@ -729,7 +735,7 @@ impl PuzzleApp {
         self.post_message(WorkerMessage::ComputeGeometry(params));
     }
 
-    fn spawn_orbit_worker(&mut self) {
+    pub(crate) fn spawn_orbit_worker(&mut self) {
         let axes = self.build_axes();
         if axes.is_empty() {
             *self.compute_output.borrow_mut() =
@@ -746,7 +752,7 @@ impl PuzzleApp {
         self.post_message(WorkerMessage::ComputeOrbits(params));
     }
 
-    fn start_rotation(&mut self, axis_index: usize, inverse: bool) {
+    pub(crate) fn start_rotation(&mut self, axis_index: usize, inverse: bool) {
         if self.anim.is_some() {
             return;
         }
@@ -844,23 +850,14 @@ impl eframe::App for PuzzleApp {
         // Keyboard shortcuts for rotations (disabled while typing into text fields).
         if !ctx.wants_keyboard_input() && self.anim.is_none() {
             let shift = ctx.input(|i| i.modifiers.shift);
-            if ctx.input(|i| i.key_pressed(egui::Key::A)) {
-                self.start_rotation(0, !shift);
-            }
-            if ctx.input(|i| i.key_pressed(egui::Key::B)) {
-                self.start_rotation(1, !shift);
-            }
-            // C, D, E, F, G for extra axes
-            let extra_keys = [
-                egui::Key::C,
-                egui::Key::D,
-                egui::Key::E,
-                egui::Key::F,
-                egui::Key::G,
-            ];
-            for (ki, key) in extra_keys.iter().enumerate() {
-                if ki < self.params.num_extra_axes as usize && ctx.input(|i| i.key_pressed(*key)) {
-                    self.start_rotation(2 + ki, !shift);
+            // A-Z for axis keybindings
+            let extra_keys = egui::Key::ALL
+                .iter()
+                .skip(egui::Key::A as usize)
+                .take(self.params.num_extra_axes as usize + 2);
+            for (ki, key) in extra_keys.enumerate() {
+                if ctx.input(|i| i.key_pressed(*key)) {
+                    self.start_rotation(ki, !shift);
                 }
             }
         }
@@ -970,669 +967,12 @@ impl eframe::App for PuzzleApp {
             self.orbit_state.groups_stale = false;
         }
 
-        // -- Controls Window ---
-        let buttons_enabled = self.anim.is_none();
+        crate::gui::controls::build_controls_window(ctx);
+        crate::gui::gap_console::build_gap_console_window(self, ctx);
 
-        egui::Window::new("Puzzle Parameters")
-            .default_pos([50.0, 50.0])
-            .show(ctx, |ui| {
-                // Bigger slider than default
-                ui.spacing_mut().slider_width = 250.0;
-
-                let mut changed = false;
-
-                ui.horizontal(|ui| {
-                    if ui
-                        .add(crate::gui::toggle(&mut self.params.show_axes))
-                        .changed()
-                        && let Some(three) = &self.three
-                    {
-                        let axes = self.build_axes();
-                        three.update_axis_indicators(&axes, self.params.show_axes);
-                    }
-                    ui.label("Show axes");
-                });
-
-                ui.horizontal(|ui| {
-                    ui.label("nA:");
-                    egui::ComboBox::from_id_salt("nA")
-                        .selected_text(format!("{}", self.params.n_a))
-                        .show_ui(ui, |ui| {
-                            for i in MIN_N..=MAX_N {
-                                if ui
-                                    .selectable_value(&mut self.params.n_a, i, format!("{}", i))
-                                    .changed()
-                                {
-                                    changed = true;
-                                }
-                            }
-                        });
-                    ui.label("nB:");
-                    egui::ComboBox::from_id_salt("nB")
-                        .selected_text(format!("{}", self.params.n_b))
-                        .show_ui(ui, |ui| {
-                            for i in MIN_N..=MAX_N {
-                                if ui
-                                    .selectable_value(&mut self.params.n_b, i, format!("{}", i))
-                                    .changed()
-                                {
-                                    changed = true;
-                                }
-                            }
-                        });
-                });
-
-                ui.horizontal(|ui| {
-                    ui.label("Manual Axis Angle");
-                    if ui
-                        .add(crate::gui::toggle(&mut self.params.manual_axis_angle))
-                        .changed()
-                    {
-                        // Sync: when switching to manual, populate from current p/q
-                        if self.params.manual_axis_angle
-                            && let Some(ang) = derive_axis_angle(
-                                self.params.n_a,
-                                self.params.n_b,
-                                self.params.p,
-                                self.params.q,
-                            )
-                        {
-                            self.params.manual_axis_angle_deg =
-                                (ang.to_degrees() * 10000.0).round() / 10000.0;
-                        }
-
-                        changed = true;
-                    }
-                });
-
-                if self.params.manual_axis_angle {
-                    ui.horizontal(|ui| {
-                        ui.label("Axis Angle:");
-                        if ui
-                            .add(
-                                egui::DragValue::new(&mut self.params.manual_axis_angle_deg)
-                                    .range(0.0..=180.0)
-                                    .speed(AXIS_ANGLE_SPEED)
-                                    .fixed_decimals(AXIS_ANGLE_DECIMALS)
-                                    .suffix("°"),
-                            )
-                            .changed()
-                        {
-                            changed = true;
-                        }
-                        ui.separator();
-                        ui.label("Max Iterations:");
-                        if ui
-                            .add(
-                                egui::DragValue::new(&mut self.params.manual_max_iterations)
-                                    .range(1..=150)
-                                    .speed(0.1),
-                            )
-                            .changed()
-                        {
-                            changed = true;
-                        }
-                    });
-                } else {
-                    ui.horizontal(|ui| {
-                        ui.label("p/q:");
-
-                        if ui
-                            .add(
-                                egui::DragValue::new(&mut self.params.p)
-                                    .range(1..=20)
-                                    .speed(0.02),
-                            )
-                            .changed()
-                        {
-                            changed = true;
-                        }
-
-                        ui.label("/");
-
-                        if ui
-                            .add(
-                                egui::DragValue::new(&mut self.params.q)
-                                    .range(2..=30)
-                                    .speed(0.02),
-                            )
-                            .changed()
-                        {
-                            changed = true;
-                        }
-
-                        if let Some(ang) = derive_axis_angle(
-                            self.params.n_a,
-                            self.params.n_b,
-                            self.params.p,
-                            self.params.q,
-                        ) {
-                            ui.label(format!("Cut: {:.4}\u{00B0}", ang.to_degrees()));
-                        }
-                    });
-                }
-
-                ui.separator();
-
-                if ui
-                    .checkbox(&mut self.params.lock_cuts, "Lock cuts together")
-                    .changed()
-                    && self.params.lock_cuts
-                {
-                    self.params.colat_b = self.params.colat_a;
-                    for ea in &mut self.params.extra_axes {
-                        ea.colat = self.params.colat_a;
-                    }
-                    changed = true;
-                }
-
-                ui.label(format!("Cut A: {:.1}\u{00B0}", self.params.colat_a));
-                if ui
-                    .add(
-                        egui::Slider::new(&mut self.params.colat_a, MIN_COLAT..=MAX_COLAT)
-                            .smallest_positive(COLAT_STEP)
-                            .fixed_decimals(COLAT_DECIMALS)
-                            .step_by(COLAT_STEP)
-                            .drag_value_speed(COLAT_SPEED)
-                            .show_value(true)
-                            .trailing_fill(true),
-                    )
-                    .changed()
-                {
-                    if self.params.lock_cuts {
-                        self.params.colat_b = self.params.colat_a;
-                        for ea in &mut self.params.extra_axes {
-                            ea.colat = self.params.colat_a;
-                        }
-                    }
-                    changed = true;
-                }
-
-                ui.label(format!("Cut B: {:.1}\u{00B0}", self.params.colat_b));
-                ui.add_enabled_ui(!self.params.lock_cuts, |ui| {
-                    if ui
-                        .add(
-                            egui::Slider::new(&mut self.params.colat_b, MIN_COLAT..=MAX_COLAT)
-                                .smallest_positive(COLAT_STEP)
-                                .fixed_decimals(COLAT_DECIMALS)
-                                .step_by(COLAT_STEP)
-                                .drag_value_speed(COLAT_SPEED)
-                                .show_value(true)
-                                .trailing_fill(true),
-                        )
-                        .changed()
-                    {
-                        if self.params.lock_cuts {
-                            self.params.colat_a = self.params.colat_b;
-                            for ea in &mut self.params.extra_axes {
-                                ea.colat = self.params.colat_b;
-                            }
-                        }
-                        changed = true;
-                    }
-                });
-
-                if changed {
-                    self.spawn_geometry_worker();
-                }
-
-                ui.separator();
-
-                // --- Additional Axes (Experimental) ---
-                let mut extra_changed = false;
-                ui.horizontal(|ui| {
-                    ui.label("Additional axes:");
-                    if ui
-                        .add(
-                            egui::DragValue::new(&mut self.params.num_extra_axes)
-                                .range(0..=5)
-                                .speed(0.05),
-                        )
-                        .changed()
-                    {
-                        let n = self.params.num_extra_axes as usize;
-                        while self.params.extra_axes.len() < n {
-                            let mut new_axis = crate::gui::ExtraAxisParams::default();
-                            if self.params.lock_cuts {
-                                new_axis.colat = self.params.colat_a;
-                            }
-                            self.params.extra_axes.push(new_axis);
-                        }
-                        self.params.extra_axes.truncate(n);
-                        extra_changed = true;
-                    }
-                    ui.label("(experimental)");
-                });
-
-                let axis_labels = ['C', 'D', 'E', 'F', 'G'];
-                for idx in 0..self.params.extra_axes.len() {
-                    ui.separator();
-
-                    let label = axis_labels.get(idx).copied().unwrap_or('?');
-                    ui.horizontal(|ui| {
-                        ui.label(format!("n{}:", label));
-                        egui::ComboBox::from_id_salt(format!("n{}", label))
-                            .selected_text(format!("{}", self.params.extra_axes[idx].n))
-                            .show_ui(ui, |ui| {
-                                for i in MIN_N..=MAX_N {
-                                    if ui
-                                        .selectable_value(
-                                            &mut self.params.extra_axes[idx].n,
-                                            i,
-                                            format!("{}", i),
-                                        )
-                                        .changed()
-                                    {
-                                        extra_changed = true;
-                                    }
-                                }
-                            });
-                        ui.label("Pitch:");
-                        if ui
-                            .add(
-                                egui::DragValue::new(&mut self.params.extra_axes[idx].pitch_deg)
-                                    .range(0.0..=180.0)
-                                    .speed(AXIS_ANGLE_SPEED)
-                                    .fixed_decimals(AXIS_ANGLE_DECIMALS)
-                                    .suffix("°"),
-                            )
-                            .changed()
-                        {
-                            extra_changed = true;
-                        }
-                        ui.label("Yaw:");
-                        if ui
-                            .add(
-                                egui::DragValue::new(&mut self.params.extra_axes[idx].yaw_deg)
-                                    .range(-180.0..=180.0)
-                                    .speed(AXIS_ANGLE_SPEED)
-                                    .fixed_decimals(AXIS_ANGLE_DECIMALS)
-                                    .suffix("°"),
-                            )
-                            .changed()
-                        {
-                            extra_changed = true;
-                        }
-                    });
-
-                    ui.label(format!(
-                        "Cut {}: {:.1}\u{00B0}",
-                        label, self.params.extra_axes[idx].colat
-                    ));
-                    ui.add_enabled_ui(!self.params.lock_cuts, |ui| {
-                        if ui
-                            .add(
-                                egui::Slider::new(
-                                    &mut self.params.extra_axes[idx].colat,
-                                    MIN_COLAT..=MAX_COLAT,
-                                )
-                                .smallest_positive(COLAT_STEP)
-                                .fixed_decimals(COLAT_DECIMALS)
-                                .step_by(COLAT_STEP)
-                                .drag_value_speed(COLAT_SPEED)
-                                .show_value(true)
-                                .trailing_fill(true),
-                            )
-                            .changed()
-                        {
-                            extra_changed = true;
-                        }
-                    });
-                }
-
-                if extra_changed {
-                    self.spawn_geometry_worker();
-                    if let Some(three) = &self.three {
-                        let axes = self.build_axes();
-                        three.update_axis_indicators(&axes, self.params.show_axes);
-                    }
-                }
-
-                ui.separator();
-
-                ui.add_enabled_ui(buttons_enabled, |ui| {
-                    ui.horizontal(|ui| {
-                        if ui.button("Rotate A").clicked() {
-                            self.start_rotation(0, true);
-                        }
-                        if ui.button("A'").clicked() {
-                            self.start_rotation(0, false);
-                        }
-                        if ui.button("Rotate B").clicked() {
-                            self.start_rotation(1, true);
-                        }
-                        if ui.button("B'").clicked() {
-                            self.start_rotation(1, false);
-                        }
-                    });
-                });
-            });
-
-        egui::Window::new("Controls")
-            .default_pos([500.0, 100.0])
-            .default_open(false)
-            .show(ctx, |ui| {
-                ui.label("Mouse controls:");
-                ui.label("- Left-drag: rotate sphere");
-                ui.label("- Middle-drag: pan sphere");
-                ui.label("- Mouse wheel: zoom");
-                ui.separator();
-                ui.label("Touch controls:");
-                ui.label("- One-finger drag: rotate sphere");
-                ui.label("- Two-finger drag: pan sphere");
-                ui.label("- Pinch: zoom (reduced sensitivity)");
-                ui.separator();
-                ui.label("Rotation shortcuts:");
-                ui.label("- A: rotate axis A");
-                ui.label("- Shift+A: inverse rotate axis A");
-                ui.label("- B: rotate axis B");
-                ui.label("- Shift+B: inverse rotate axis B");
-            });
-
-        // Orbit Analysis Window
-        egui::Window::new("Orbit Analysis")
-            .default_pos([50.0, 350.0])
-            .show(ctx, |ui| {
-                ui.horizontal(|ui| {
-                    if ui
-                        .add(toggle(&mut self.orbit_state.annotate_pieces))
-                        .changed()
-                        && let Some(three) = &self.three
-                    {
-                        three
-                            .face_group
-                            .set_visible(self.orbit_state.annotate_pieces);
-                    }
-                    ui.label("Annotate pieces");
-                });
-
-                ui.horizontal(|ui| {
-                    if ui
-                        .add(toggle(&mut self.orbit_state.number_pieces))
-                        .changed()
-                        && let Some(three) = &self.three
-                        && let Some(orbit) = &self.orbit_result
-                    {
-                        three.update_face_dots(orbit, self.orbit_state.number_pieces);
-                    }
-                    ui.label("Number pieces");
-                });
-
-                ui.horizontal(|ui| {
-                    if ui
-                        .add(toggle(&mut self.orbit_state.auto_update_groups))
-                        .changed()
-                        && self.orbit_state.auto_update_groups
-                        && self.orbit_result.is_some()
-                    {
-                        self.orbit_state.groups_stale = true;
-                        self.orbit_dreadnaut.clear();
-                        self.spawn_orbit_worker();
-                    }
-                    ui.label("Compute groups");
-                });
-
-                ui.horizontal(|ui| {
-                    if ui
-                        .add(toggle(&mut self.orbit_state.auto_update_orbits))
-                        .changed()
-                        && self.orbit_state.auto_update_orbits
-                        && self.orbit_state.orbits_stale
-                    {
-                        self.spawn_orbit_worker();
-                    }
-                    ui.label("Automatically update orbits");
-                });
-
-                ui.separator();
-
-                let mut filter_changed = false;
-                ui.horizontal(|ui| {
-                    if ui
-                        .add(toggle(&mut self.orbit_state.fudged_mode))
-                        .changed()
-                    {
-                        filter_changed = true;
-                    }
-                    ui.label("Fudged Mode (experimental)");
-                });
-
-                if self.orbit_state.fudged_mode {
-                    ui.horizontal(|ui| {
-                        ui.label("Min Piece Angle");
-                        let changed = ui
-                            .add(
-                                egui::DragValue::new(&mut self.orbit_state.min_piece_angle_deg)
-                                    .range(0.1..=10.0)
-                                    .speed(0.02)
-                                    .suffix(" deg"),
-                            )
-                            .changed();
-                        if changed {
-                            filter_changed = true;
-                        }
-                    });
-
-                    ui.horizontal(|ui| {
-                        ui.label("Min Piece Perimeter");
-                        let changed = ui
-                            .add(
-                                egui::DragValue::new(&mut self.orbit_state.min_piece_perimeter)
-                                    .range(0.0..=10.0)
-                                    .speed(0.001),
-                            )
-                            .changed();
-                        if changed {
-                            filter_changed = true;
-                        }
-                    });
-                }
-
-                if filter_changed {
-                    self.orbit_state.orbits_stale = true;
-                    self.orbit_state.groups_stale = true;
-                    self.orbit_dreadnaut.clear();
-                    self.orbit_result = None;
-                    if let Some(three) = &self.three {
-                        three.clear_face_dots();
-                    }
-                    if self.orbit_state.auto_update_orbits {
-                        self.spawn_orbit_worker();
-                    }
-                }
-
-                ui.separator();
-
-                ui.horizontal(|ui| {
-                    if ui
-                        .add_enabled(
-                            buttons_enabled
-                                && (!self.orbit_state.auto_update_orbits
-                                    || self.orbit_state.orbits_stale),
-                            egui::Button::new("Recompute Orbits"),
-                        )
-                        .clicked()
-                    {
-                        self.spawn_orbit_worker();
-                    }
-                });
-
-                let err_msg = self.compute_output.borrow().clone();
-                if err_msg.starts_with("Error:") && self.orbit_result.is_none() {
-                    ui.separator();
-                    ui.label(egui::RichText::new(&err_msg).color(egui::Color32::RED));
-                }
-
-                // Show orbit tree
-                if let Some(orbit) = &self.orbit_result {
-                    ui.separator();
-                    egui::ScrollArea::vertical().vscroll(true).show(ui, |ui| {
-                        let msg = self.compute_output.borrow().clone();
-                        if msg.starts_with("Error:") {
-                            ui.label(egui::RichText::new(msg).color(egui::Color32::RED));
-                        } else {
-                            ui.label(format!("Pieces: {}", orbit.face_count));
-                        }
-                        ui.label(format!("Total Orbits: {}", orbit.orbit_count));
-
-                        let mut orbits_with_members: Vec<(usize, usize, Vec<usize>)> = (0..orbit
-                            .orbit_count)
-                            .map(|oi| {
-                                (
-                                    oi,
-                                    0, // placeholder
-                                    orbit
-                                        .face_orbit_indices
-                                        .iter()
-                                        .enumerate()
-                                        .filter(|&(_, &foi)| match foi {
-                                            Some(i) => i == oi,
-                                            None => false,
-                                        })
-                                        .map(|(i, _)| i + 1)
-                                        .collect::<Vec<usize>>(),
-                                )
-                            })
-                            .filter(|(_, _, members)| members.len() > 1)
-                            .collect();
-
-                        // Give them an original color index based on the unsorted layout (skipping singletons)
-                        (0..orbits_with_members.len()).for_each(|i| {
-                            orbits_with_members[i].1 = i;
-                        });
-
-                        orbits_with_members
-                            .sort_by_key(|(_, _, members)| -(members.len() as isize));
-
-                        for (oi, color_idx, members) in orbits_with_members {
-                            let c = crate::color::ORBIT_COLORS
-                                [color_idx % crate::color::ORBIT_COLORS.len()];
-                            let rgb = c.1;
-                            let color_name = c.0;
-
-                            let header_text =
-                                format!("     {}: {} pieces", color_name, members.len());
-
-                            // Draw circle in header
-                            let collapsing_resp = egui::CollapsingHeader::new(header_text)
-                                .id_salt(format!("orbit_header_{}", oi))
-                                .default_open(true)
-                                .show(ui, |ui| {
-                                    // Show generator if number_pieces
-                                    if self.orbit_state.number_pieces
-                                        && let Some(orbit) = &self.orbit_result
-                                    {
-                                        ui.label(format!(
-                                            "Generator: {}",
-                                            match GapManager::reconstruct_generator_numbering_from_members(&orbit.generators[oi], &members) {
-                                                Ok(renumbered) => GapManager::format_group_generator(true, &renumbered),
-                                                Err(e) => e,
-                                            }
-                                        ));
-                                    }
-
-                                    if let Some(hash) = self.orbit_dreadnaut.get(&oi) {
-                                        ui.label(format!("Canonical Label: {}", hash));
-                                        match self.gap_cache.get(hash) {
-                                            Some(None) => {
-                                                ui.label("Structure: Computing...");
-                                                ui.label("Permutations: Computing...");
-                                            }
-                                            Some(Some(cached)) => {
-                                                ui.label(format!("Structure: {}", cached.structure));
-                                                ui.label(format!("Permutations: {}", cached.size));
-                                            }
-                                            None => {
-                                                ui.label("Structure: (not computed)");
-                                                ui.label("Permutations: (not computed)");
-                                            }
-                                        }
-                                    } else {
-                                        ui.label("Canonical Label: Computing...");
-                                        ui.label("Structure: Computing...");
-                                        ui.label("Permutations: Computing...");
-                                    }
-                                });
-
-                            // Draw circle on the header rect
-                            let circle_center = collapsing_resp.header_response.rect.left_center()
-                                + egui::vec2(24.0, 0.0);
-                            ui.painter().circle_filled(
-                                circle_center,
-                                5.0,
-                                egui::Color32::from_rgb(
-                                    (rgb[0] * 255.0) as u8,
-                                    (rgb[1] * 255.0) as u8,
-                                    (rgb[2] * 255.0) as u8,
-                                ),
-                            );
-                        }
-                    });
-                }
-            });
-
-        // GAP Window
-        let gap_title = match &self.gap_manager.state {
-            GapState::Loading(_, _) => "GAP Console (loading...)",
-            GapState::Error(_) => "GAP Console (error)",
-            _ => "GAP Console",
-        };
-        egui::Window::new(gap_title)
-            .id("GAP Console".into()) // unchanging ID
-            .default_pos([500.0, 50.0])
-            .default_width(500.0)
-            .default_open(false)
-            .show(ctx, |ui| match &self.gap_manager.state {
-                GapState::NotStarted => {
-                    ui.label("GAP is not started.");
-                }
-                GapState::Loading(status, progress) => {
-                    ui.label(status);
-                    ui.add(egui::ProgressBar::new(*progress));
-                    ui.spinner();
-                }
-                GapState::Error(err) => {
-                    ui.label(format!("Error loading GAP: {}", err));
-                }
-                GapState::Ready => {
-                    egui::ScrollArea::vertical()
-                        .max_height(300.0)
-                        .auto_shrink(false)
-                        .stick_to_bottom(true)
-                        .show(ui, |ui| {
-                            ui.monospace(&self.gap_manager.output_history);
-                        });
-
-                    ui.horizontal(|ui| {
-                        if ui
-                            .button("Reset")
-                            .on_hover_text("Reset GAP worker")
-                            .clicked()
-                        {
-                            self.pending_gap_requests.clear();
-                            self.gap_cache.clear();
-                            self.gap_manager.reset();
-                            self.gap_manager.init(ctx.clone());
-                        }
-                        ui.label("gap>");
-                        let response = ui.add(
-                            egui::TextEdit::singleline(&mut self.gap_input)
-                                .desired_width(f32::INFINITY),
-                        );
-                        if response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
-                            let cmd = self.gap_input.clone();
-                            self.gap_input.clear();
-                            self.gap_manager.send_command(&cmd);
-                            response.request_focus();
-                        }
-                    });
-                }
-            });
+        crate::gui::orbit_analysis::build_orbit_analysis_window(self, ctx);
+        crate::gui::puzzle_params::build_puzzle_params_window(self, ctx);
 
         ctx.request_repaint();
-    }
-
-    fn clear_color(&self, _visuals: &egui::Visuals) -> [f32; 4] {
-        [0.0, 0.0, 0.0, 0.0]
     }
 }

@@ -1,3 +1,8 @@
+pub mod controls;
+pub mod gap_console;
+pub mod orbit_analysis;
+pub mod puzzle_params;
+
 // --- App State ---
 
 #[derive(Clone, Debug, PartialEq)]
