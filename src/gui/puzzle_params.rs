@@ -102,18 +102,18 @@ pub fn build_puzzle_params_window(app: &mut PuzzleApp, ctx: &egui::Context) {
                     let axis_name = app.params.axes[idx].axis_name.clone();
                     let name_ok = is_axis_ok(&axis_name, &app.axis_defs);
 
-                    // Check if this axis references a WillsEquation definition
-                    let wills_n = app.axis_defs.get_wills_n_for_axis(&axis_name);
+                    // Check if this axis references a CosineRule definition
+                    let cosine_rule_n = app.axis_defs.get_cosine_rule_n_for_axis(&axis_name);
 
                     // If n_match is on, sync n from the definition
                     if app.params.axes[idx].n_match {
-                        if let Some(matched_n) = wills_n {
+                        if let Some(matched_n) = cosine_rule_n {
                             if app.params.axes[idx].n != matched_n {
                                 app.params.axes[idx].n = matched_n;
                                 changed = true;
                             }
                         } else {
-                            // No longer a WillsEquation reference, turn off n_match
+                            // No longer a CosineRule reference, turn off n_match
                             app.params.axes[idx].n_match = false;
                         }
                     }
@@ -133,9 +133,9 @@ pub fn build_puzzle_params_window(app: &mut PuzzleApp, ctx: &egui::Context) {
                         // Axis label
                         ui.label(format!("n{}:", label));
 
-                        // n (fold symmetry) combo - with "Match" option for WillsEquation axes
+                        // n (fold symmetry) combo - with "Match" option for CosineRule axes
                         let n_display = if app.params.axes[idx].n_match
-                            && let Some(matched_n) = wills_n
+                            && let Some(matched_n) = cosine_rule_n
                         {
                             format!("Match ({})", matched_n)
                         } else {
@@ -144,8 +144,8 @@ pub fn build_puzzle_params_window(app: &mut PuzzleApp, ctx: &egui::Context) {
                         egui::ComboBox::from_id_salt(format!("n_{}", idx))
                             .selected_text(&n_display)
                             .show_ui(ui, |ui| {
-                                // "Match" option (only for WillsEquation axes)
-                                if let Some(matched_n) = wills_n {
+                                // "Match" option (only for CosineRule axes)
+                                if let Some(matched_n) = cosine_rule_n {
                                     let mut match_val = app.params.axes[idx].n_match;
                                     if ui
                                         .selectable_label(
@@ -220,11 +220,11 @@ pub fn build_puzzle_params_window(app: &mut PuzzleApp, ctx: &egui::Context) {
                                     }
                                 }
                             });
-                        // Auto-enable Match when selecting a WillsEquation axis
+                        // Auto-enable Match when selecting a CosineRule axis
                         if app.params.axes[idx].axis_name != prev_name {
                             if let Some(matched_n) = app
                                 .axis_defs
-                                .get_wills_n_for_axis(&app.params.axes[idx].axis_name)
+                                .get_cosine_rule_n_for_axis(&app.params.axes[idx].axis_name)
                             {
                                 app.params.axes[idx].n_match = true;
                                 app.params.axes[idx].n = matched_n;
@@ -238,7 +238,7 @@ pub fn build_puzzle_params_window(app: &mut PuzzleApp, ctx: &egui::Context) {
                         if app.params.axes[idx].n_match
                             && let Some(matched_n) = app
                                 .axis_defs
-                                .get_wills_n_for_axis(&app.params.axes[idx].axis_name)
+                                .get_cosine_rule_n_for_axis(&app.params.axes[idx].axis_name)
                             && app.params.axes[idx].n != matched_n
                         {
                             app.params.axes[idx].n = matched_n;

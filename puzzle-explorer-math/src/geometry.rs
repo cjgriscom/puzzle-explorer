@@ -149,6 +149,8 @@ pub fn find_circ(list: &[Circle], circ: &Circle) -> Option<usize> {
     list.iter().position(|c| same_circle(c, circ))
 }
 
+/// Using the law of cosines, derive the dihedral angle between two faces
+/// for a given set of geometric parameters.
 pub fn derive_axis_angle(n_a: u32, n_b: u32, p: u32, q: u32) -> Option<f64> {
     let c_a = (PI / n_a as f64).cos();
     let s_a = (PI / n_a as f64).sin();

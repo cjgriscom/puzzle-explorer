@@ -36,7 +36,7 @@ pub struct AxisEntry {
     pub axis_name: String, // references an axis definition (or X/Y/Z)
     pub n: u32,
     pub colat: f32,
-    pub n_match: bool, // when true, n syncs from WillsEquation definition
+    pub n_match: bool, // when true, n syncs from CosineRule definition
     pub enabled: bool, // when false, axis is skipped during geometry build
 }
 

@@ -39,9 +39,9 @@ pub enum DerivedAxis {
     Average {
         axes: Vec<String>,
     },
-    // Will's biaxe equation (puzzle-explorer-math::geometry::derive_axis_angle)
+    // Spherical law of cosines (puzzle-explorer-math::geometry::derive_axis_angle)
     //   returns empty if a_axis and dir_axis
-    WillsEquation {
+    CosineRule {
         p: u32,
         q: u32,
         n_a: u32,
@@ -66,7 +66,7 @@ const VARIANT_LABELS: &[&str] = &[
     "Copy",
     "Cross Product",
     "Average",
-    "Will's Equation",
+    "Cosine Rule",
     "Circular Pattern",
 ];
 
@@ -135,7 +135,7 @@ impl DerivedAxis {
                     Ok(vec![sum.normalize()])
                 }
             }
-            DerivedAxis::WillsEquation {
+            DerivedAxis::CosineRule {
                 p,
                 q,
                 n_a,
@@ -208,7 +208,7 @@ impl DerivedAxis {
                 vec![a0.clone(), a1.clone()]
             }
             DerivedAxis::Average { axes } => axes.clone(),
-            DerivedAxis::WillsEquation {
+            DerivedAxis::CosineRule {
                 a_axis,
                 perpendicular_axis,
                 ..
@@ -229,7 +229,7 @@ impl DerivedAxis {
     /// Empty if single-vector output (base name only).
     pub fn output_suffixes(&self) -> Vec<String> {
         match self {
-            DerivedAxis::WillsEquation { .. } => vec!["A".into(), "B".into()],
+            DerivedAxis::CosineRule { .. } => vec!["A".into(), "B".into()],
             DerivedAxis::CircularPattern { n, .. } => (1..=*n).map(|i| i.to_string()).collect(),
             _ => Vec::new(),
         }
@@ -242,7 +242,7 @@ impl DerivedAxis {
             DerivedAxis::Copy { .. } => 2,
             DerivedAxis::CrossProduct { .. } => 3,
             DerivedAxis::Average { .. } => 4,
-            DerivedAxis::WillsEquation { .. } => 5,
+            DerivedAxis::CosineRule { .. } => 5,
             DerivedAxis::CircularPattern { .. } => 6,
         }
     }
@@ -269,7 +269,7 @@ impl DerivedAxis {
             4 => DerivedAxis::Average {
                 axes: vec!["X".to_string(), "Y".to_string()],
             },
-            5 => DerivedAxis::WillsEquation {
+            5 => DerivedAxis::CosineRule {
                 p: 1,
                 q: 5,
                 n_a: 3,
@@ -316,7 +316,7 @@ impl DerivedAxis {
                     }
                 }
             }
-            DerivedAxis::WillsEquation {
+            DerivedAxis::CosineRule {
                 a_axis,
                 perpendicular_axis,
                 ..
@@ -372,7 +372,7 @@ impl Default for AxisDefinitions {
 
         result.definitions.insert(
             "Trapentrix".to_string(),
-            DerivedAxis::WillsEquation {
+            DerivedAxis::CosineRule {
                 p: 1,
                 q: 5,
                 n_a: 3,
@@ -474,9 +474,9 @@ impl AxisDefinitions {
                 if vecs.len() == 1 {
                     axis_map.insert(name.clone(), vecs[0]);
                 } else {
-                    // Multi-vector: use _A/_B for WillsEquation, _1/_2/... otherwise
-                    let is_wills = matches!(axis, DerivedAxis::WillsEquation { .. });
-                    if is_wills && vecs.len() == 2 {
+                    // Multi-vector: use _A/_B for CosineRule, _1/_2/... otherwise
+                    let is_cos = matches!(axis, DerivedAxis::CosineRule { .. });
+                    if is_cos && vecs.len() == 2 {
                         axis_map.insert(format!("{}_A", name), vecs[0]);
                         axis_map.insert(format!("{}_B", name), vecs[1]);
                     } else {
@@ -497,8 +497,8 @@ impl AxisDefinitions {
         for (name, axis) in &self.definitions {
             match self.resolved.get(name) {
                 Some(Ok(vecs)) if vecs.len() > 1 => {
-                    let is_wills = matches!(axis, DerivedAxis::WillsEquation { .. });
-                    if is_wills && vecs.len() == 2 {
+                    let is_cos = matches!(axis, DerivedAxis::CosineRule { .. });
+                    if is_cos && vecs.len() == 2 {
                         names.push(format!("{}_A", name));
                         names.push(format!("{}_B", name));
                     } else {
@@ -515,13 +515,13 @@ impl AxisDefinitions {
         names
     }
 
-    /// For a given axis name referencing a WillsEquation definition,
+    /// For a given axis name referencing a CosineRule definition,
     /// return the matching n value (n_a for _A, n_b for _B).
-    pub fn get_wills_n_for_axis(&self, axis_name: &str) -> Option<u32> {
+    pub fn get_cosine_rule_n_for_axis(&self, axis_name: &str) -> Option<u32> {
         if let Some(pos) = axis_name.rfind('_') {
             let base = &axis_name[..pos];
             let suffix = &axis_name[pos + 1..];
-            if let Some(DerivedAxis::WillsEquation { n_a, n_b, .. }) = self.definitions.get(base) {
+            if let Some(DerivedAxis::CosineRule { n_a, n_b, .. }) = self.definitions.get(base) {
                 return match suffix {
                     "A" => Some(*n_a),
                     "B" => Some(*n_b),
@@ -541,15 +541,15 @@ impl AxisDefinitions {
         {
             return Some(vecs[0]);
         }
-        // Sub-indexed lookup: check for _A/_B (WillsEquation) or _N (numeric)
+        // Sub-indexed lookup: check for _A/_B (CosineRule) or _N (numeric)
         if let Some(pos) = name.rfind('_') {
             let base = &name[..pos];
             let suffix = &name[pos + 1..];
             if let Some(Ok(vecs)) = self.resolved.get(base) {
-                // _A / _B for WillsEquation (2-vector)
+                // _A / _B for CosineRule (2-vector)
                 if vecs.len() == 2
                     && let Some(def) = self.definitions.get(base)
-                    && matches!(def, DerivedAxis::WillsEquation { .. })
+                    && matches!(def, DerivedAxis::CosineRule { .. })
                 {
                     match suffix {
                         "A" => return Some(vecs[0]),
@@ -683,7 +683,7 @@ impl AxisDefinitions {
 fn strip_sub_index(name: &str) -> String {
     if let Some(idx) = name.rfind('_') {
         let suffix = &name[idx + 1..];
-        // Strip numeric sub-indices (_1, _2, ...) and WillsEquation labels (_A, _B)
+        // Strip numeric sub-indices (_1, _2, ...) and CosineRule labels (_A, _B)
         if suffix.parse::<u32>().is_ok() || suffix == "A" || suffix == "B" {
             return name[..idx].to_string();
         }
@@ -1055,7 +1055,7 @@ pub fn build_axis_definitions_window(app: &mut PuzzleApp, ctx: &egui::Context) {
                                     changed = true;
                                 }
                             }
-                            DerivedAxis::WillsEquation {
+                            DerivedAxis::CosineRule {
                                 p,
                                 q,
                                 n_a,
@@ -1139,7 +1139,7 @@ pub fn build_axis_definitions_window(app: &mut PuzzleApp, ctx: &egui::Context) {
                                     ui.label("A Axis:");
                                     if axis_combo_box(
                                         ui,
-                                        &format!("wills_a_{}", name),
+                                        &format!("cos_a_{}", name),
                                         a_axis,
                                         &available,
                                     ) {
@@ -1148,7 +1148,7 @@ pub fn build_axis_definitions_window(app: &mut PuzzleApp, ctx: &egui::Context) {
                                     ui.label("Perp Axis:");
                                     if axis_combo_box(
                                         ui,
-                                        &format!("wills_perp_{}", name),
+                                        &format!("cos_perp_{}", name),
                                         perpendicular_axis,
                                         &available,
                                     ) {
@@ -1217,7 +1217,7 @@ pub fn build_axis_definitions_window(app: &mut PuzzleApp, ctx: &egui::Context) {
         // so the geometry worker sees the updated n values immediately
         for entry in &mut app.params.axes {
             if entry.n_match
-                && let Some(matched_n) = app.axis_defs.get_wills_n_for_axis(&entry.axis_name)
+                && let Some(matched_n) = app.axis_defs.get_cosine_rule_n_for_axis(&entry.axis_name)
             {
                 entry.n = matched_n;
             }
