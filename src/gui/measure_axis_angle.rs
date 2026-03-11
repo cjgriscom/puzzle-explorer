@@ -1,10 +1,5 @@
 use crate::app::PuzzleApp;
-
-#[derive(Clone, Debug, PartialEq, Default)]
-pub struct MeasureAxisAngleWindowState {
-    pub axis_a: String,
-    pub axis_b: String,
-}
+use crate::gui::axis_combo_box;
 
 pub fn build_measure_axis_angle_window(app: &mut PuzzleApp, ctx: &egui::Context) {
     let mut open = app.window_state.show_measure_axis_angle;
@@ -74,18 +69,4 @@ pub fn build_measure_axis_angle_window(app: &mut PuzzleApp, ctx: &egui::Context)
             }
         });
     app.window_state.show_measure_axis_angle = open;
-}
-
-fn axis_combo_box(ui: &mut egui::Ui, id_salt: &str, selected: &mut String, available: &[String]) {
-    egui::ComboBox::from_id_salt(id_salt)
-        .selected_text(if selected.is_empty() {
-            "(none)"
-        } else {
-            selected.as_str()
-        })
-        .show_ui(ui, |ui| {
-            for name in available {
-                ui.selectable_value(selected, name.clone(), name);
-            }
-        });
 }

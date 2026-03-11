@@ -46,103 +46,9 @@ pub fn build_windows(app: &mut PuzzleApp, ctx: &egui::Context) {
     puzzle_params::build_puzzle_params_window(app, ctx);
 }
 
-// --- App State ---
+// --- Custom UI Elements ---
 
-#[derive(Clone, Debug, PartialEq, Default)]
-pub struct WindowState {
-    pub show_controls: bool,
-    pub show_measure_axis_angle: bool,
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub struct AxisEntry {
-    pub axis_name: String, // references an axis definition (or X/Y/Z)
-    pub n: u32,
-    pub colat: f32,
-    pub n_match: bool, // when true, n syncs from CosineRule definition
-    pub enabled: bool, // when false, axis is skipped during geometry build
-}
-
-impl Default for AxisEntry {
-    fn default() -> Self {
-        Self {
-            axis_name: String::new(),
-            n: 3,
-            colat: 109.5,
-            n_match: false,
-            enabled: true,
-        }
-    }
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub struct PuzzleParams {
-    pub max_iterations: u32,
-    pub lock_cuts: bool,
-    pub show_axes: bool,
-    pub axes: Vec<AxisEntry>,
-}
-
-impl Default for PuzzleParams {
-    fn default() -> Self {
-        Self {
-            max_iterations: 30,
-            lock_cuts: true,
-            show_axes: true,
-            axes: vec![
-                AxisEntry {
-                    axis_name: "Trapentrix_A".to_string(),
-                    n: 3,
-                    colat: 109.5,
-                    n_match: true,
-                    enabled: true,
-                },
-                AxisEntry {
-                    axis_name: "Trapentrix_B".to_string(),
-                    n: 3,
-                    colat: 109.5,
-                    n_match: true,
-                    enabled: true,
-                },
-            ],
-        }
-    }
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub struct OrbitAnalysisState {
-    pub annotate_pieces: bool,
-    pub number_pieces: bool,
-    pub fudged_mode: bool,
-    pub min_piece_angle_deg: f32,
-    pub min_piece_perimeter: f64,
-    pub auto_update_orbits: bool,
-    pub auto_update_groups: bool,
-    pub orbits_stale: bool,
-    pub groups_stale: bool,
-}
-
-impl Default for OrbitAnalysisState {
-    fn default() -> Self {
-        Self {
-            annotate_pieces: true,
-            number_pieces: false,
-            fudged_mode: false,
-            min_piece_angle_deg: 5.0,
-            min_piece_perimeter: 0.02,
-            auto_update_orbits: false,
-            auto_update_groups: false,
-            orbits_stale: false,
-            groups_stale: false,
-        }
-    }
-}
-
-pub fn toggle_ui(
-    ui: &mut egui::Ui,
-    on: &mut bool,
-    mut color: Option<egui::Color32>,
-) -> egui::Response {
+fn toggle_ui(ui: &mut egui::Ui, on: &mut bool, mut color: Option<egui::Color32>) -> egui::Response {
     let desired_size = ui.spacing().interact_size.y * egui::vec2(2.0, 1.0);
     let (rect, mut response) = ui.allocate_exact_size(desired_size, egui::Sense::click());
     if response.clicked() {
@@ -176,10 +82,36 @@ pub fn toggle_ui(
     response
 }
 
+/// Custom toggle element
 pub fn toggle(on: &mut bool) -> impl egui::Widget + '_ {
     move |ui: &mut egui::Ui| toggle_ui(ui, on, None)
 }
 
+/// Custom toggle element with customizable foreground color
 pub fn toggle_with_color(on: &mut bool, color: egui::Color32) -> impl egui::Widget + '_ {
     move |ui: &mut egui::Ui| toggle_ui(ui, on, Some(color))
+}
+
+/// Axis reference combo box - returns true if the value changed
+pub fn axis_combo_box(
+    ui: &mut egui::Ui,
+    id_salt: &str,
+    selected: &mut String,
+    available: &[String],
+) -> bool {
+    let mut changed = false;
+    egui::ComboBox::from_id_salt(id_salt)
+        .selected_text(if selected.is_empty() {
+            "(none)"
+        } else {
+            selected.as_str()
+        })
+        .show_ui(ui, |ui| {
+            for name in available {
+                if ui.selectable_value(selected, name.clone(), name).changed() {
+                    changed = true;
+                }
+            }
+        });
+    changed
 }

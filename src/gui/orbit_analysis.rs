@@ -1,4 +1,5 @@
 use crate::app::PuzzleApp;
+use crate::color::ORBIT_COLORS;
 use crate::gap::GapManager;
 use crate::gui::toggle;
 use crate::gui::{ORBIT_ANALYSIS_POS, ORBIT_ANALYSIS_WIDTH};
@@ -181,8 +182,8 @@ pub fn build_orbit_analysis_window(app: &mut PuzzleApp, ctx: &egui::Context) {
                         .sort_by_key(|(_, _, members)| -(members.len() as isize));
                     
                     for (oi, color_idx, members) in orbits_with_members {
-                        let c = crate::color::ORBIT_COLORS
-                            [color_idx % crate::color::ORBIT_COLORS.len()];
+                        let c = ORBIT_COLORS
+                            [color_idx % ORBIT_COLORS.len()];
                         let rgb = c.1;
                         let color_name = c.0;
 

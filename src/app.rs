@@ -1,5 +1,9 @@
 use egui::Visuals;
+use glam::DVec3;
+use serde::Deserialize;
+use serde::Serialize;
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::rc::Rc;
 use wasm_bindgen::JsCast;
 use wasm_bindgen::prelude::*;
@@ -8,21 +12,19 @@ use web_sys::{HtmlCanvasElement, MessageEvent, Worker, WorkerOptions, window};
 use puzzle_explorer_math::circle::Circle;
 use puzzle_explorer_math::math::TAU;
 
-use crate::color::{ORBIT_COLORS, SINGLETON_COLOR, color_to_hex};
+use crate::color::*;
 use crate::dreadnaut::DreadnautManager;
 use crate::gap::GapManager;
-use crate::gui::WindowState;
-use crate::gui::axis_definitions::AxisDefinitions;
-use crate::gui::measure_axis_angle::MeasureAxisAngleWindowState;
-use crate::gui::{OrbitAnalysisState, PuzzleParams};
 use crate::input::{CameraInputState, handle_camera_input};
-use crate::puzzle::{AxisDef, GeometryParams, GeometryResult, OrbitParams, OrbitResult, PolyLine};
 use crate::three::{
     BufferAttribute, BufferGeometry, CanvasTexture, Group, Line, LineBasicMaterial, LineLoop, Mesh,
     MeshBasicMaterial, PerspectiveCamera, Quaternion, Scene, SphereGeometry, Sprite,
     SpriteMaterial, Vector3, WebGLRenderer,
 };
-use crate::worker::{WorkerMessage, WorkerResponse};
+use crate::types::{
+    AxisDefinitions, MeasureAxisAngleWindowState, OrbitAnalysisState, PuzzleParams, WindowState,
+};
+use crate::worker::{GeometryResult, OrbitResult, PolyLine, WorkerMessage, WorkerResponse};
 
 // --- Constants ---
 
@@ -97,12 +99,7 @@ impl ThreeState {
         // Render sphere
         let sphere_geo = SphereGeometry::new(R, 64, 48);
         let mat_params = js_sys::Object::new();
-        js_sys::Reflect::set(
-            &mat_params,
-            &"color".into(),
-            &crate::color::SPHERE_COLOR.into(),
-        )
-        .ok()?;
+        js_sys::Reflect::set(&mat_params, &"color".into(), &SPHERE_COLOR.into()).ok()?;
         js_sys::Reflect::set(&mat_params, &"polygonOffset".into(), &true.into()).ok()?;
         js_sys::Reflect::set(&mat_params, &"polygonOffsetFactor".into(), &1.into()).ok()?;
         js_sys::Reflect::set(&mat_params, &"polygonOffsetUnits".into(), &1.into()).ok()?;
@@ -225,29 +222,28 @@ impl ThreeState {
                 &poly_line.points,
                 DISP_R as f32,
                 poly_line.is_loop,
-                crate::color::ARC_COLOR,
+                ARC_COLOR,
             );
         }
     }
 
+    // Order is reversed so last added are on top
     pub fn update_axis_indicators(
         &self,
-        axes: &[Option<crate::puzzle::AxisDef>],
+        axes: &[Option<AxisDef>],
         puzzle_axes_visible: bool,
-        def_vectors: &[glam::DVec3],
-        builtin_axes: &[(glam::DVec3, u32)],
+        def_vectors: &[DVec3],
+        builtin_axes: &[(DVec3, u32)],
     ) {
         crate::three::dispose_group_children(&self.axis_group);
         let len = DISP_R as f32 * 1.3;
-        // Render visible definition axes in grey
-        let grey: u32 = 0x888888;
         for v in def_vectors {
             let d = v.normalize();
             let points = [
                 [0.0, 0.0, 0.0],
                 [d.x as f32 * len, d.y as f32 * len, d.z as f32 * len],
             ];
-            self.add_line_to_group(&self.axis_group, &points, 1.0, false, grey);
+            self.add_line_to_group(&self.axis_group, &points, 1.0, false, AXIS_COLOR);
         }
         // Render visible builtin reference axes in their designated colors
         for (v, color) in builtin_axes {
@@ -267,7 +263,7 @@ impl ThreeState {
                 Some(a) => a,
                 None => continue,
             };
-            let color = crate::color::color_to_hex(&ORBIT_COLORS[i % ORBIT_COLORS.len()].1);
+            let color = color_to_hex(&ORBIT_COLORS[i % ORBIT_COLORS.len()].1);
             let d = axis.direction;
             let points = [
                 [0.0, 0.0, 0.0],
@@ -277,7 +273,8 @@ impl ThreeState {
         }
     }
 
-    pub fn update_measure_arc(&self, enable: bool, a: glam::DVec3, b: glam::DVec3) {
+    /// Measurement arc between two axes
+    pub fn update_measure_arc(&self, enable: bool, a: DVec3, b: DVec3) {
         crate::three::dispose_group_children(&self.measure_group);
         if !enable {
             return;
@@ -301,7 +298,7 @@ impl ThreeState {
             &points,
             MEASUREMENT_ARC_R as f32,
             false,
-            crate::color::ARC_COLOR,
+            ARC_COLOR,
         );
     }
 
@@ -380,7 +377,7 @@ impl ThreeState {
                     .set(pos[0] as f64, pos[1] as f64, pos[2] as f64);
                 // Move it out slightly to avoid depth fighting if it's right on the surface
                 let center_norm =
-                    glam::DVec3::new(pos[0] as f64, pos[1] as f64, pos[2] as f64).normalize();
+                    DVec3::new(pos[0] as f64, pos[1] as f64, pos[2] as f64).normalize();
                 let label_pos = center_norm * LABEL_R;
                 sprite.position().set(label_pos.x, label_pos.y, label_pos.z);
                 self.face_group.add(&sprite);
@@ -401,12 +398,12 @@ impl ThreeState {
     }
 
     fn create_label(&self, text: &str, color: &[f32; 3]) -> Sprite {
-        let window = web_sys::window().unwrap();
+        let window = window().unwrap();
         let document = window.document().unwrap();
         let canvas = document
             .create_element("canvas")
             .unwrap()
-            .dyn_into::<web_sys::HtmlCanvasElement>()
+            .dyn_into::<HtmlCanvasElement>()
             .ok()
             .unwrap();
         canvas.set_width(64);
@@ -428,7 +425,7 @@ impl ThreeState {
             .unwrap();
         ctx.fill();
 
-        let contrast_color = crate::color::get_contrast_color(r, g, b);
+        let contrast_color = get_contrast_color(r, g, b);
         ctx.set_fill_style_str(&contrast_color);
         ctx.set_font("bold 32px Courier New");
         ctx.set_text_align("center");
@@ -448,7 +445,7 @@ impl ThreeState {
         crate::three::dispose_group_children(&self.face_group);
     }
 
-    /// Build the two animation groups by splitting stored arc points along the cap boundary.
+    /// Build the two animation groups by splitting stored arc points along the cap boundary
     pub fn build_animation_groups(
         &self,
         lines: &[PolyLine],
@@ -463,13 +460,7 @@ impl ThreeState {
         // Boundary circle
         if let Some(circ) = boundary_circle {
             let pts = circ.sample_arc(0.0, TAU, 128);
-            self.add_line_to_group(
-                &static_grp,
-                &pts,
-                DISP_R as f32,
-                true,
-                crate::color::ARC_COLOR,
-            );
+            self.add_line_to_group(&static_grp, &pts, DISP_R as f32, true, ARC_COLOR);
         }
 
         let pt_dot = |p: &[f32; 3]| -> f64 {
@@ -511,13 +502,7 @@ impl ThreeState {
 
             for (run_pts, inside) in runs {
                 let grp = if inside { &rot_grp } else { &static_grp };
-                self.add_line_to_group(
-                    grp,
-                    &run_pts,
-                    DISP_R as f32,
-                    false,
-                    crate::color::ARC_COLOR,
-                );
+                self.add_line_to_group(grp, &run_pts, DISP_R as f32, false, ARC_COLOR);
             }
         }
 
@@ -571,10 +556,10 @@ pub struct PuzzleApp {
     pub(crate) gap_input: String,
 
     request_counter: usize,
-    pending_dreadnaut_requests: std::collections::HashMap<usize, (usize, usize)>, // req_id -> (orbit_index, geometry_index)
-    pub(crate) pending_gap_requests: std::collections::HashMap<usize, String>, // req_id -> dreadnaut hash
-    pub(crate) orbit_dreadnaut: std::collections::HashMap<usize, String>,
-    pub(crate) gap_cache: std::collections::HashMap<String, Option<crate::gap::GapGroupResult>>, // global table of dreadnaut hash -> gap result
+    pending_dreadnaut_requests: HashMap<usize, (usize, usize)>, // req_id -> (orbit_index, geometry_index)
+    pub(crate) pending_gap_requests: HashMap<usize, String>,    // req_id -> dreadnaut hash
+    pub(crate) orbit_dreadnaut: HashMap<usize, String>,
+    pub(crate) gap_cache: HashMap<String, Option<crate::gap::GapGroupResult>>,
 }
 
 impl PuzzleApp {
@@ -617,10 +602,10 @@ impl PuzzleApp {
             gap_input: String::new(),
 
             request_counter: 0,
-            pending_dreadnaut_requests: std::collections::HashMap::new(),
-            pending_gap_requests: std::collections::HashMap::new(),
-            orbit_dreadnaut: std::collections::HashMap::new(),
-            gap_cache: std::collections::HashMap::new(),
+            pending_dreadnaut_requests: HashMap::new(),
+            pending_gap_requests: HashMap::new(),
+            orbit_dreadnaut: HashMap::new(),
+            gap_cache: HashMap::new(),
         };
 
         // Resolve default axis definitions before default puzzle params
@@ -630,6 +615,26 @@ impl PuzzleApp {
         app.gap_manager.init(cc.egui_ctx.clone());
         app.spawn_geometry_worker();
         app
+    }
+
+    /// Sync n values from CosineRule definitions when n_match is enabled
+    /// Returns true if any value changed
+    pub fn sync_n_match(&mut self) -> bool {
+        let mut changed = false;
+        for entry in &mut self.params.axes {
+            if entry.n_match {
+                if let Some(matched_n) = self.axis_defs.get_cosine_rule_n_for_axis(&entry.axis_name)
+                {
+                    if entry.n != matched_n {
+                        entry.n = matched_n;
+                        changed = true;
+                    }
+                } else {
+                    entry.n_match = false;
+                }
+            }
+        }
+        changed
     }
 
     fn init_worker(&mut self, build_hash: &str) {
@@ -770,11 +775,10 @@ impl PuzzleApp {
             self.stored_geometry = None;
             return;
         }
-        let params = GeometryParams {
+        self.post_message(WorkerMessage::ComputeGeometry {
             axes,
             max_iterations_cap: self.max_iterations_cap_override(),
-        };
-        self.post_message(WorkerMessage::ComputeGeometry(params));
+        });
     }
 
     pub(crate) fn spawn_orbit_worker(&mut self) {
@@ -784,14 +788,13 @@ impl PuzzleApp {
                 "No valid axis angle for these parameters".to_string();
             return;
         }
-        let params = OrbitParams {
+        self.post_message(WorkerMessage::ComputeOrbits {
             axes,
             max_iterations_cap: self.max_iterations_cap_override(),
             fudged_mode: self.orbit_state.fudged_mode,
             min_piece_angle_deg: self.orbit_state.min_piece_angle_deg,
             min_piece_perimeter: self.orbit_state.min_piece_perimeter,
-        };
-        self.post_message(WorkerMessage::ComputeOrbits(params));
+        });
     }
 
     pub(crate) fn start_rotation(&mut self, axis_index: usize, inverse: bool) {
@@ -819,7 +822,7 @@ impl PuzzleApp {
             TAU / n as f64
         };
 
-        let boundary_circle = Circle::new(glam::DVec3::new(axis[0], axis[1], axis[2]), colat);
+        let boundary_circle = Circle::new(DVec3::new(axis[0], axis[1], axis[2]), colat);
 
         let three = match &self.three {
             Some(t) => t,
@@ -912,11 +915,11 @@ impl eframe::App for PuzzleApp {
             self.is_computing = false;
             self.task_start_time = None;
             match response {
-                WorkerResponse::GeometryComputed(data) => {
+                WorkerResponse::GeometryComputed(result) => {
                     self.geometry_index += 1;
-                    *self.compute_output.borrow_mut() = format!("{} arcs", data.lines.len());
+                    *self.compute_output.borrow_mut() = format!("{} arcs", result.lines.len());
                     if let Some(three) = &self.three {
-                        three.update_geometry(&data);
+                        three.update_geometry(&result);
                         let axes = self.build_axes();
                         let def_vecs = self.axis_defs.get_visible_vectors();
                         let builtin_axes = self.axis_defs.get_visible_builtin_axes();
@@ -927,7 +930,7 @@ impl eframe::App for PuzzleApp {
                             &builtin_axes,
                         );
                     }
-                    self.stored_geometry = Some(data);
+                    self.stored_geometry = Some(result);
 
                     self.orbit_state.orbits_stale = true;
                     if self.orbit_state.auto_update_orbits {
@@ -1032,7 +1035,34 @@ impl eframe::App for PuzzleApp {
         ctx.request_repaint();
     }
 
-    fn clear_color(&self, _visuals: &egui::Visuals) -> [f32; 4] {
+    fn clear_color(&self, _visuals: &Visuals) -> [f32; 4] {
         [0.0, 0.0, 0.0, 0.0]
     }
+}
+
+// --- Axis Definition ---
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct AxisDef {
+    pub colat: f32,          // colatitude in degrees
+    pub direction: [f64; 3], // unit direction vector
+    pub n: u32,              // rotational symmetry order
+}
+
+impl AxisDef {
+    pub fn get_direction(&self) -> DVec3 {
+        DVec3::new(self.direction[0], self.direction[1], self.direction[2])
+    }
+
+    pub fn get_colat_rad(&self) -> f64 {
+        (self.colat as f64).to_radians()
+    }
+}
+
+pub fn cvt_axis_defs(params_axes: &[Option<AxisDef>]) -> Vec<(DVec3, f64, u32)> {
+    params_axes
+        .iter()
+        .filter_map(|a| a.as_ref())
+        .map(|a| (a.get_direction(), a.get_colat_rad(), a.n))
+        .collect()
 }

@@ -1,22 +1,22 @@
 //! Rust egui webapp with puzzle geometry analysis toolsuite
 
 mod app;
+mod axis_impl;
 mod color;
 mod dreadnaut;
 mod gap;
 mod gui;
 mod input;
-mod puzzle;
 mod three;
 mod time;
+mod types;
 mod worker;
 
 pub use app::PuzzleApp;
 pub use worker::worker_handle_msg;
 
-use wasm_bindgen::JsCast;
-use wasm_bindgen::prelude::*;
-use web_sys::{Event, HtmlCanvasElement};
+#[cfg(target_arch = "wasm32")]
+use wasm_bindgen::prelude::wasm_bindgen;
 
 /// Entry point for the web application.
 ///
@@ -27,7 +27,11 @@ pub async fn run_app(
     egui_canvas_id: String,
     three_canvas_id: String,
     build_hash: String,
-) -> Result<(), JsValue> {
+) -> Result<(), wasm_bindgen::JsValue> {
+    use wasm_bindgen::JsCast;
+    use wasm_bindgen::prelude::*;
+    use web_sys::{Event, HtmlCanvasElement};
+
     console_error_panic_hook::set_once();
     console_log::init_with_level(log::Level::Debug).ok();
 

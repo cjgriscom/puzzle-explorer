@@ -1,11 +1,11 @@
 use egui::Button;
 
 use crate::app::PuzzleApp;
-use crate::gui::AxisEntry;
 use crate::gui::{
     COLAT_DECIMALS, COLAT_SPEED, COLAT_STEP, MAX_COLAT, MAX_N, MAX_PUZZLE_AXES, MIN_COLAT, MIN_N,
     PUZZLE_PARAMS_POS, PUZZLE_PARAMS_WIDTH,
 };
+use crate::types::AxisEntry;
 
 pub fn build_puzzle_params_window(app: &mut PuzzleApp, ctx: &egui::Context) {
     let buttons_enabled = app.anim.is_none();
@@ -89,6 +89,8 @@ pub fn build_puzzle_params_window(app: &mut PuzzleApp, ctx: &egui::Context) {
                 });
             });
 
+            ui.separator();
+
             // Get available axis names from axis definitions
             let available_names = app.axis_defs.available_axis_names();
 
@@ -97,10 +99,14 @@ pub fn build_puzzle_params_window(app: &mut PuzzleApp, ctx: &egui::Context) {
             let num_axes = app.params.axes.len();
             let mut to_remove: Option<usize> = None;
 
+            changed |= app.sync_n_match();
+
             // Vertical scroll
             egui::ScrollArea::vertical().show(ui, |ui| {
                 for idx in 0..num_axes {
-                    ui.separator();
+                    if idx != 0 {
+                        ui.separator();
+                    }
 
                     let label = axis_labels.get(idx).copied().unwrap_or('?');
 
@@ -110,19 +116,6 @@ pub fn build_puzzle_params_window(app: &mut PuzzleApp, ctx: &egui::Context) {
 
                     // Check if this axis references a CosineRule definition
                     let cosine_rule_n = app.axis_defs.get_cosine_rule_n_for_axis(&axis_name);
-
-                    // If n_match is on, sync n from the definition
-                    if app.params.axes[idx].n_match {
-                        if let Some(matched_n) = cosine_rule_n {
-                            if app.params.axes[idx].n != matched_n {
-                                app.params.axes[idx].n = matched_n;
-                                changed = true;
-                            }
-                        } else {
-                            // No longer a CosineRule reference, turn off n_match
-                            app.params.axes[idx].n_match = false;
-                        }
-                    }
 
                     ui.horizontal(|ui| {
                         // Enabled toggle
@@ -238,17 +231,6 @@ pub fn build_puzzle_params_window(app: &mut PuzzleApp, ctx: &egui::Context) {
                             } else {
                                 app.params.axes[idx].n_match = false;
                             }
-                        }
-
-                        // Per-frame sync for n_match
-                        if app.params.axes[idx].n_match
-                            && let Some(matched_n) = app
-                                .axis_defs
-                                .get_cosine_rule_n_for_axis(&app.params.axes[idx].axis_name)
-                            && app.params.axes[idx].n != matched_n
-                        {
-                            app.params.axes[idx].n = matched_n;
-                            changed = true;
                         }
 
                         // Delete button (disabled if only 1 axis)

@@ -1,4 +1,4 @@
-// --- Orbit Colors (direct from JS/CSS version) ---
+// --- Orbit Colors  ---
 
 #[rustfmt::skip]
 pub const ORBIT_COLORS: &[(&str, [f32; 3])] = &[
@@ -42,8 +42,14 @@ pub fn color_to_hex(c: &[f32; 3]) -> u32 {
     (r << 16) | (g << 8) | b
 }
 
+pub fn hex_to_color32(h: u32) -> egui::Color32 {
+    egui::Color32::from_rgb((h >> 16) as u8, (h >> 8 & 0xFF) as u8, (h & 0xFF) as u8)
+}
+
 pub const ARC_COLOR: u32 = 0xeeeeee;
 pub const SPHERE_COLOR: u32 = 0x1a1a1a;
+
+pub const AXIS_COLOR: u32 = 0x888888;
 
 pub const BUILTIN_X_COLOR: u32 = 0xFF8080;
 pub const BUILTIN_Y_COLOR: u32 = 0x80FF80;

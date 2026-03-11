@@ -1,8 +1,6 @@
-use glam::DVec3;
 use puzzle_explorer_math::geometry::{compute_arcs, merge_arcs};
 use puzzle_explorer_math::math::TAU;
 
-use crate::puzzle::{GeometryParams, GeometryResult, OrbitParams, OrbitResult, PolyLine};
 use puzzle_explorer_math::orbit::{OrbitAnalysisInput, compute_orbit_analysis};
 use puzzle_explorer_math::polygon::PolygonOptions;
 
@@ -10,35 +8,7 @@ use wasm_bindgen::prelude::*;
 
 use serde::{Deserialize, Serialize};
 
-// --- Worker Messages ---
-
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub enum WorkerMessage {
-    ComputeGeometry(GeometryParams),
-    ComputeOrbits(OrbitParams),
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub enum WorkerResponse {
-    GeometryComputed(GeometryResult),
-    OrbitsComputed(OrbitResult),
-    Error(String),
-}
-
-/// Convert AxisDef params (degrees, [f64;3]) to the internal math tuple (DVec3, radians, n).
-fn cvt_axis_defs(params_axes: &[Option<crate::puzzle::AxisDef>]) -> Vec<(DVec3, f64, u32)> {
-    params_axes
-        .iter()
-        .filter_map(|a| a.as_ref())
-        .map(|a| {
-            (
-                DVec3::new(a.direction[0], a.direction[1], a.direction[2]),
-                (a.colat as f64).to_radians(),
-                a.n,
-            )
-        })
-        .collect()
-}
+use crate::app::{AxisDef, cvt_axis_defs};
 
 #[wasm_bindgen]
 pub fn worker_handle_msg(msg: JsValue) -> JsValue {
@@ -53,12 +23,15 @@ pub fn worker_handle_msg(msg: JsValue) -> JsValue {
     };
 
     let response = match message {
-        WorkerMessage::ComputeGeometry(params) => {
+        WorkerMessage::ComputeGeometry {
+            axes,
+            max_iterations_cap,
+        } => {
             let mut lines = Vec::new();
-            let axes = cvt_axis_defs(&params.axes);
+            let axes = cvt_axis_defs(&axes);
             if !axes.is_empty() {
                 let (circles, arcs) =
-                    compute_arcs(&axes, params.max_iterations_cap.map(|cap| cap as usize));
+                    compute_arcs(&axes, max_iterations_cap.map(|cap| cap as usize));
                 let arcs = merge_arcs(&arcs);
 
                 for arc in &arcs {
@@ -79,23 +52,29 @@ pub fn worker_handle_msg(msg: JsValue) -> JsValue {
             WorkerResponse::GeometryComputed(GeometryResult { lines })
         }
 
-        WorkerMessage::ComputeOrbits(params) => {
-            let axes = cvt_axis_defs(&params.axes);
+        WorkerMessage::ComputeOrbits {
+            axes,
+            max_iterations_cap,
+            fudged_mode,
+            min_piece_angle_deg,
+            min_piece_perimeter,
+        } => {
+            let axes = cvt_axis_defs(&axes);
             if axes.is_empty() {
                 WorkerResponse::Error("No axes defined".to_string())
             } else {
                 let (circles, arcs) =
-                    compute_arcs(&axes, params.max_iterations_cap.map(|cap| cap as usize));
+                    compute_arcs(&axes, max_iterations_cap.map(|cap| cap as usize));
                 let arcs = merge_arcs(&arcs);
 
                 let analysis = match compute_orbit_analysis(OrbitAnalysisInput {
                     circles: &circles,
                     arcs: &arcs,
                     axes: &axes,
-                    options: match params.fudged_mode {
+                    options: match fudged_mode {
                         true => PolygonOptions::FudgedMode {
-                            min_piece_angle_rad: Some(params.min_piece_angle_deg.to_radians()),
-                            min_piece_perimeter: params.min_piece_perimeter,
+                            min_piece_angle_rad: Some(min_piece_angle_deg.to_radians()),
+                            min_piece_perimeter,
                         },
                         false => PolygonOptions::Default,
                     },
@@ -133,4 +112,48 @@ pub fn worker_handle_msg(msg: JsValue) -> JsValue {
     };
 
     serde_wasm_bindgen::to_value(&response).unwrap()
+}
+
+// --- Worker Messages ---
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub enum WorkerMessage {
+    ComputeGeometry {
+        axes: Vec<Option<AxisDef>>,
+        max_iterations_cap: Option<u32>,
+    },
+    ComputeOrbits {
+        axes: Vec<Option<AxisDef>>,
+        max_iterations_cap: Option<u32>,
+        fudged_mode: bool,
+        min_piece_angle_deg: f32,
+        min_piece_perimeter: f64,
+    },
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub enum WorkerResponse {
+    GeometryComputed(GeometryResult),
+    OrbitsComputed(OrbitResult),
+    Error(String),
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct GeometryResult {
+    pub lines: Vec<PolyLine>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct OrbitResult {
+    pub orbit_count: usize,
+    pub face_count: usize,
+    pub face_positions: Vec<[f32; 3]>,
+    pub face_orbit_indices: Vec<Option<usize>>,
+    pub generators: Vec<Vec<Vec<Vec<usize>>>>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct PolyLine {
+    pub points: Vec<[f32; 3]>,
+    pub is_loop: bool,
 }

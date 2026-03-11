@@ -206,8 +206,8 @@ fn test_invert_axis_angle() {
     println!("result: {:?}", result);
 }
 
-/// Using the law of cosines, derive the dihedral angle between two faces
-/// for a given set of geometric parameters.
+/// Derive the dihedral angle between two faces for a given set of
+/// geometric parameters using the law of cosines
 pub fn derive_axis_angle(n_a: u32, n_b: u32, p: u32, q: u32) -> Option<f64> {
     let c_a = (PI / n_a as f64).cos();
     let s_a = (PI / n_a as f64).sin();
@@ -225,7 +225,7 @@ pub fn derive_axis_angle(n_a: u32, n_b: u32, p: u32, q: u32) -> Option<f64> {
     Some(cos_t.clamp(-1.0, 1.0).acos())
 }
 
-/// Each axis is (direction_unit_vec, colat_radians, rotational_symmetry_n).
+/// Each axis is (direction_unit_vec, colat_radians, rotational_symmetry_n)
 pub fn compute_arcs(
     axes: &[(DVec3, f64, u32)],
     max_iterations_cap: Option<usize>,

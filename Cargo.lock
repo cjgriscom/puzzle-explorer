@@ -2402,7 +2402,6 @@ dependencies = [
  "eframe",
  "egui",
  "glam",
- "indexmap",
  "js-sys",
  "log",
  "puzzle-explorer-math",
