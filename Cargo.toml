@@ -45,5 +45,8 @@ serde-wasm-bindgen = "0.6.5"
 glam.workspace = true
 indexmap = "2"
 
+[build-dependencies]
+chrono = "0.4"
+
 [package.metadata.wasm-pack.profile.release]
 wasm-opt = true

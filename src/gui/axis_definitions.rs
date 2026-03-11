@@ -546,6 +546,15 @@ impl AxisDefinitions {
     /// Look up a single resolved vector by name, handling sub-indexed names.
     /// Returns Some(vec) for valid single-vector names (including "Foo_1" sub-indices).
     pub fn get_resolved_vector(&self, name: &str) -> Option<glam::DVec3> {
+        if name.is_empty() {
+            return None;
+        }
+        match name {
+            "X" => return Some(glam::DVec3::X),
+            "Y" => return Some(glam::DVec3::Y),
+            "Z" => return Some(glam::DVec3::Z),
+            _ => {}
+        };
         // Direct lookup: if the base name resolves to exactly 1 vector
         if let Some(Ok(vecs)) = self.resolved.get(name)
             && vecs.len() == 1

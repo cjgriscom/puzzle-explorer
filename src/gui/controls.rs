@@ -1,9 +1,9 @@
 use crate::gui::CONTROLS_POS;
 
-pub fn build_controls_window(ctx: &egui::Context) {
+pub fn build_controls_window(ctx: &egui::Context, open: &mut bool) {
     egui::Window::new("Controls")
         .default_pos(CONTROLS_POS)
-        .default_open(false)
+        .open(open)
         .show(ctx, |ui| {
             ui.label("Mouse controls:");
             ui.label("- Left-drag: rotate sphere");

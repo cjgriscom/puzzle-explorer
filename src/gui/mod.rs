@@ -1,15 +1,19 @@
+use crate::PuzzleApp;
+
 pub mod axis_definitions;
 pub mod controls;
 pub mod gap_console;
+pub mod measure_axis_angle;
+pub mod menu;
 pub mod orbit_analysis;
 pub mod puzzle_params;
 
 // --- Constants ---
-pub const AXIS_DEFINITIONS_POS: [f32; 2] = [20.0, 20.0];
-pub const PUZZLE_PARAMS_POS: [f32; 2] = [20.0, 205.0];
-pub const ORBIT_ANALYSIS_POS: [f32; 2] = [20.0, 430.0];
-pub const GAP_CONSOLE_POS: [f32; 2] = [460.0, 20.0];
-pub const CONTROLS_POS: [f32; 2] = [460.0, 70.0];
+pub const AXIS_DEFINITIONS_POS: [f32; 2] = [20.0, 40.0];
+pub const PUZZLE_PARAMS_POS: [f32; 2] = [20.0, 225.0];
+pub const ORBIT_ANALYSIS_POS: [f32; 2] = [20.0, 450.0];
+pub const GAP_CONSOLE_POS: [f32; 2] = [460.0, 40.0];
+pub const CONTROLS_POS: [f32; 2] = [460.0, 90.0];
 
 pub const AXIS_DEFINITIONS_WIDTH: f32 = 400.0;
 pub const PUZZLE_PARAMS_WIDTH: f32 = 400.0;
@@ -29,7 +33,26 @@ pub const EULER_DECIMALS: usize = 4;
 pub const AXIS_ANGLE_SPEED: f64 = 0.01;
 pub const AXIS_ANGLE_DECIMALS: usize = 4;
 
+// --- Entry Point ---
+
+pub fn build_windows(app: &mut PuzzleApp, ctx: &egui::Context) {
+    menu::build_menu_bar(app, ctx);
+    controls::build_controls_window(ctx, &mut app.window_state.show_controls);
+    measure_axis_angle::build_measure_axis_angle_window(app, ctx);
+    gap_console::build_gap_console_window(app, ctx);
+
+    orbit_analysis::build_orbit_analysis_window(app, ctx);
+    axis_definitions::build_axis_definitions_window(app, ctx);
+    puzzle_params::build_puzzle_params_window(app, ctx);
+}
+
 // --- App State ---
+
+#[derive(Clone, Debug, PartialEq, Default)]
+pub struct WindowState {
+    pub show_controls: bool,
+    pub show_measure_axis_angle: bool,
+}
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct AxisEntry {

@@ -106,7 +106,7 @@ pub fn build_puzzle_params_window(app: &mut PuzzleApp, ctx: &egui::Context) {
 
                     // Check if axis name is valid (exists and resolves OK)
                     let axis_name = app.params.axes[idx].axis_name.clone();
-                    let name_ok = is_axis_ok(&axis_name, &app.axis_defs);
+                    let name_ok = app.axis_defs.get_resolved_vector(&axis_name).is_some();
 
                     // Check if this axis references a CosineRule definition
                     let cosine_rule_n = app.axis_defs.get_cosine_rule_n_for_axis(&axis_name);
@@ -307,13 +307,4 @@ pub fn build_puzzle_params_window(app: &mut PuzzleApp, ctx: &egui::Context) {
                 app.spawn_geometry_worker();
             }
         });
-}
-
-/// Check if an axis name resolves to a valid (single) vector.
-fn is_axis_ok(name: &str, axis_defs: &crate::gui::axis_definitions::AxisDefinitions) -> bool {
-    match name {
-        "" => false,
-        "X" | "Y" | "Z" => true,
-        _ => axis_defs.get_resolved_vector(name).is_some(),
-    }
 }

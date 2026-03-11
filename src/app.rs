@@ -11,7 +11,9 @@ use puzzle_explorer_math::math::TAU;
 use crate::color::{ORBIT_COLORS, SINGLETON_COLOR, color_to_hex};
 use crate::dreadnaut::DreadnautManager;
 use crate::gap::GapManager;
+use crate::gui::WindowState;
 use crate::gui::axis_definitions::AxisDefinitions;
+use crate::gui::measure_axis_angle::MeasureAxisAngleWindowState;
 use crate::gui::{OrbitAnalysisState, PuzzleParams};
 use crate::input::{CameraInputState, handle_camera_input};
 use crate::puzzle::{AxisDef, GeometryParams, GeometryResult, OrbitParams, OrbitResult, PolyLine};
@@ -27,6 +29,7 @@ use crate::worker::{WorkerMessage, WorkerResponse};
 const R: f64 = 1.0; // Radius of sphere
 const DISP_R: f64 = R * 1.004; // Dist of arcs from sphere
 const LABEL_R: f64 = R * 1.04; // Dist. of orbit labels from sphere
+const MEASUREMENT_ARC_R: f64 = R * 1.2; // Dist. of measurement arc from sphere
 
 // --- Animation State ---
 
@@ -57,6 +60,7 @@ pub struct ThreeState {
     cut_group: Group,
     face_group: Group,
     axis_group: Group,
+    measure_group: Group,
     cam_dist: f64,
     pan_screen: [f64; 2],
     base_group_y: f64,
@@ -115,6 +119,9 @@ impl ThreeState {
         let axis_group = Group::new();
         group.add(&axis_group);
 
+        let measure_group = Group::new();
+        group.add(&measure_group);
+
         group.rotateX(0.35);
         group.rotateY(-0.5);
         let base_group_y = -0.3;
@@ -129,6 +136,7 @@ impl ThreeState {
             cut_group,
             face_group,
             axis_group,
+            measure_group,
             cam_dist,
             pan_screen: [0.0, 0.0],
             base_group_y,
@@ -267,6 +275,34 @@ impl ThreeState {
             ];
             self.add_line_to_group(&self.axis_group, &points, 1.0, false, color);
         }
+    }
+
+    pub fn update_measure_arc(&self, enable: bool, a: glam::DVec3, b: glam::DVec3) {
+        crate::three::dispose_group_children(&self.measure_group);
+        if !enable {
+            return;
+        }
+        let a = a.normalize();
+        let b = b.normalize();
+        let theta = a.dot(b).clamp(-1.0, 1.0).acos();
+        if theta < 1e-10 {
+            return;
+        }
+        let sin_theta = theta.sin();
+        let n = 64usize;
+        let mut points = Vec::with_capacity(n + 1);
+        for i in 0..=n {
+            let t = i as f64 / n as f64;
+            let p = (a * ((1.0 - t) * theta).sin() + b * (t * theta).sin()) / sin_theta;
+            points.push([p.x as f32, p.y as f32, p.z as f32]);
+        }
+        self.add_line_to_group(
+            &self.measure_group,
+            &points,
+            MEASUREMENT_ARC_R as f32,
+            false,
+            crate::color::ARC_COLOR,
+        );
     }
 
     fn add_line_to_group(
@@ -500,24 +536,32 @@ fn lerp_normalize(a: &[f32; 3], b: &[f32; 3], t: f32) -> [f32; 3] {
 // --- PuzzleApp ---
 
 pub struct PuzzleApp {
-    build_hash: String,
+    pub(crate) build_hash: String,
+
+    pub(crate) three: Option<ThreeState>,
+    pub(crate) anim: Option<AnimState>,
+    camera_input: CameraInputState,
+
+    // Main worker
+    worker: Option<Worker>,
+    _on_message: Option<Closure<dyn FnMut(MessageEvent)>>,
+    _on_error: Option<Closure<dyn FnMut(MessageEvent)>>,
+    task_start_time: Option<f64>,
+    is_computing: bool,
+    pending_message: Option<WorkerMessage>,
+    pending_response: Rc<RefCell<Option<WorkerResponse>>>,
+    pub(crate) compute_output: Rc<RefCell<String>>,
+
+    stored_geometry: Option<GeometryResult>,
+    geometry_index: usize,
+    pub(crate) orbit_result: Option<OrbitResult>,
+
+    // GUI states
+    pub(crate) window_state: WindowState,
     pub(crate) params: PuzzleParams,
     pub(crate) orbit_state: OrbitAnalysisState,
     pub(crate) axis_defs: AxisDefinitions,
-    pub(crate) three: Option<ThreeState>,
-    worker: Option<Worker>,
-    task_start_time: Option<f64>,
-    is_computing: bool,
-    pub(crate) compute_output: Rc<RefCell<String>>,
-    pending_response: Rc<RefCell<Option<WorkerResponse>>>,
-    pending_message: Option<WorkerMessage>,
-    camera_input: CameraInputState,
-    stored_geometry: Option<GeometryResult>,
-    geometry_index: usize,
-    pub(crate) anim: Option<AnimState>,
-    pub(crate) orbit_result: Option<OrbitResult>,
-    _on_message: Option<Closure<dyn FnMut(MessageEvent)>>,
-    _on_error: Option<Closure<dyn FnMut(MessageEvent)>>,
+    pub(crate) measure_axis_angle_state: MeasureAxisAngleWindowState,
 
     // Dreadnaut worker
     dreadnaut_data: DreadnautManager,
@@ -544,23 +588,29 @@ impl PuzzleApp {
 
         let mut app = Self {
             build_hash: build_hash.clone(),
+
+            three,
+            anim: None,
+            camera_input: CameraInputState::default(),
+
+            worker: None,
+            _on_message: None,
+            _on_error: None,
+            task_start_time: None,
+            is_computing: false,
+            pending_message: None,
+            pending_response: Rc::new(RefCell::new(None)),
+            compute_output: Rc::new(RefCell::new("Ready".to_string())),
+
+            stored_geometry: None,
+            geometry_index: 0,
+            orbit_result: None,
+
+            window_state: WindowState::default(),
             params: PuzzleParams::default(),
             orbit_state: OrbitAnalysisState::default(),
             axis_defs: AxisDefinitions::default(),
-            three,
-            worker: None,
-            task_start_time: None,
-            is_computing: false,
-            compute_output: Rc::new(RefCell::new("Ready".to_string())),
-            pending_response: Rc::new(RefCell::new(None)),
-            pending_message: None,
-            camera_input: CameraInputState::default(),
-            stored_geometry: None,
-            geometry_index: 0,
-            anim: None,
-            orbit_result: None,
-            _on_message: None,
-            _on_error: None,
+            measure_axis_angle_state: MeasureAxisAngleWindowState::default(),
 
             dreadnaut_data: DreadnautManager::new(),
             gap_manager: GapManager::new(),
@@ -693,15 +743,7 @@ impl PuzzleApp {
                 continue;
             }
             // Look up the direction from resolved axis definitions
-            let direction = if entry.axis_name == "X" {
-                Some(glam::DVec3::X)
-            } else if entry.axis_name == "Y" {
-                Some(glam::DVec3::Y)
-            } else if entry.axis_name == "Z" {
-                Some(glam::DVec3::Z)
-            } else {
-                self.axis_defs.get_resolved_vector(&entry.axis_name)
-            };
+            let direction = self.axis_defs.get_resolved_vector(&entry.axis_name);
 
             if let Some(dir) = direction {
                 let d = dir.normalize();
@@ -974,12 +1016,18 @@ impl eframe::App for PuzzleApp {
             self.orbit_state.groups_stale = false;
         }
 
-        crate::gui::controls::build_controls_window(ctx);
-        crate::gui::gap_console::build_gap_console_window(self, ctx);
+        crate::gui::build_windows(self, ctx);
 
-        crate::gui::orbit_analysis::build_orbit_analysis_window(self, ctx);
-        crate::gui::axis_definitions::build_axis_definitions_window(self, ctx);
-        crate::gui::puzzle_params::build_puzzle_params_window(self, ctx);
+        if let Some(three) = &self.three
+            && let Some(a) = self
+                .axis_defs
+                .get_resolved_vector(&self.measure_axis_angle_state.axis_a)
+            && let Some(b) = self
+                .axis_defs
+                .get_resolved_vector(&self.measure_axis_angle_state.axis_b)
+        {
+            three.update_measure_arc(self.window_state.show_measure_axis_angle, a, b);
+        }
 
         ctx.request_repaint();
     }
