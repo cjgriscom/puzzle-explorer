@@ -284,12 +284,12 @@ pub fn build_puzzle_params_window(app: &mut PuzzleApp, ctx: &egui::Context) {
                         // Reorder buttons
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                             if ui
-                                .add_enabled(idx + 1 < num_axes, Button::new("↓"))
+                                .add_enabled(idx + 1 < num_axes, Button::new("▼"))
                                 .clicked()
                             {
                                 swap_up = Some(idx + 1);
                             }
-                            if ui.add_enabled(idx > 0, Button::new("↑")).clicked() {
+                            if ui.add_enabled(idx > 0, Button::new("▲")).clicked() {
                                 swap_up = Some(idx);
                             }
                         });

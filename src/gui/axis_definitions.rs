@@ -195,10 +195,10 @@ pub fn build_axis_definitions_window(app: &mut PuzzleApp, ctx: &egui::Context) {
 
                         // Push buttons to the right
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            if ui.add_enabled(i + 1 < num_defs, Button::new("↓")).clicked() {
+                            if ui.add_enabled(i + 1 < num_defs, Button::new("▼")).clicked() {
                                 swap_up = Some(i + 1);
                             }
-                            if ui.add_enabled(i > 0, Button::new("↑")).clicked() {
+                            if ui.add_enabled(i > 0, Button::new("▲")).clicked() {
                                 swap_up = Some(i);
                             }
 

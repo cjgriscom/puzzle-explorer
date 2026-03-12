@@ -427,7 +427,7 @@ impl ThreeState {
 
         let contrast_color = get_contrast_color(r, g, b);
         ctx.set_fill_style_str(&contrast_color);
-        ctx.set_font("bold 32px Courier New");
+        ctx.set_font("bold 32px monospace");
         ctx.set_text_align("center");
         ctx.set_text_baseline("middle");
         let _ = ctx.fill_text(text, 32.0, 34.0);
@@ -570,6 +570,33 @@ impl PuzzleApp {
     ) -> Self {
         let three = ThreeState::new(three_canvas_id);
         cc.egui_ctx.set_visuals(Visuals::dark());
+
+        let mut fonts = egui::FontDefinitions::default();
+        fonts.font_data.insert(
+            "Oxygen".into(),
+            std::sync::Arc::new(egui::FontData::from_static(include_bytes!(
+                "../fonts/Oxygen-Light.ttf"
+            ))),
+        );
+        fonts.font_data.insert(
+            "Icons".into(),
+            std::sync::Arc::new(egui::FontData::from_static(include_bytes!(
+                "../fonts/generated/icons.ttf"
+            ))),
+        );
+        fonts.font_data.insert(
+            "Arrows".into(),
+            std::sync::Arc::new(egui::FontData::from_static(include_bytes!(
+                "../fonts/generated/arrows.ttf"
+            ))),
+        );
+        for family in [egui::FontFamily::Proportional, egui::FontFamily::Monospace] {
+            let list = fonts.families.entry(family).or_default();
+            list.insert(0, "Arrows".to_string());
+            list.insert(0, "Icons".to_string());
+            list.insert(0, "Oxygen".to_string());
+        }
+        cc.egui_ctx.set_fonts(fonts);
 
         let mut app = Self {
             build_hash: build_hash.clone(),
