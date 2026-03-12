@@ -143,7 +143,9 @@ pub fn build_axis_definitions_window(app: &mut PuzzleApp, ctx: &egui::Context) {
 
             // Ordered keys for iteration
             let keys: Vec<String> = app.axis_defs.definitions_keys();
+            let num_defs = keys.len();
             let available = app.axis_defs.available_axis_names();
+            let mut swap_up: Option<usize> = None;
 
             egui::ScrollArea::vertical().show(ui, |ui| {
                 for (i, name) in keys.iter().enumerate() {
@@ -193,7 +195,13 @@ pub fn build_axis_definitions_window(app: &mut PuzzleApp, ctx: &egui::Context) {
 
                         // Push buttons to the right
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            // Delete button
+                            if ui.add_enabled(i + 1 < num_defs, Button::new("↓")).clicked() {
+                                swap_up = Some(i + 1);
+                            }
+                            if ui.add_enabled(i > 0, Button::new("↑")).clicked() {
+                                swap_up = Some(i);
+                            }
+
                             if ui.add(Button::new("🗑")).clicked() {
                                 app.axis_defs.pending_delete = Some(name.clone());
                             }
@@ -584,6 +592,11 @@ pub fn build_axis_definitions_window(app: &mut PuzzleApp, ctx: &egui::Context) {
                     });
                 }
             });
+
+            if let Some(idx) = swap_up {
+                app.axis_defs.definitions.swap(idx - 1, idx);
+                changed = true;
+            }
         });
 
     if changed {

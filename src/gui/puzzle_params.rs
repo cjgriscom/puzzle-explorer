@@ -15,7 +15,7 @@ pub fn build_puzzle_params_window(app: &mut PuzzleApp, ctx: &egui::Context) {
         .default_width(PUZZLE_PARAMS_WIDTH)
         .show(ctx, |ui| {
             // Bigger slider than default
-            ui.spacing_mut().slider_width = 250.0;
+            ui.spacing_mut().slider_width = 300.0;
 
             let mut changed = false;
 
@@ -98,6 +98,7 @@ pub fn build_puzzle_params_window(app: &mut PuzzleApp, ctx: &egui::Context) {
             let axis_labels: Vec<char> = ('A'..='Z').collect();
             let num_axes = app.params.axes.len();
             let mut to_remove: Option<usize> = None;
+            let mut swap_up: Option<usize> = None;
 
             changed |= app.sync_n_match();
 
@@ -142,6 +143,7 @@ pub fn build_puzzle_params_window(app: &mut PuzzleApp, ctx: &egui::Context) {
                         };
                         egui::ComboBox::from_id_salt(format!("n_{}", idx))
                             .selected_text(&n_display)
+                            .width(80.0)
                             .show_ui(ui, |ui| {
                                 // "Match" option (only for CosineRule axes)
                                 if let Some(matched_n) = cosine_rule_n {
@@ -232,54 +234,73 @@ pub fn build_puzzle_params_window(app: &mut PuzzleApp, ctx: &egui::Context) {
                                 app.params.axes[idx].n_match = false;
                             }
                         }
+                        // Rotation buttons
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            if ui.add_enabled(buttons_enabled, Button::new("↺")).clicked() {
+                                app.start_rotation(idx, false);
+                            }
+                            if ui.add_enabled(buttons_enabled, Button::new("↻")).clicked() {
+                                app.start_rotation(idx, true);
+                            }
 
-                        // Delete button (disabled if only 1 axis)
-                        ui.add_enabled_ui(num_axes > 1, |ui| {
-                            if ui.add(Button::new("🗑")).clicked() {
-                                to_remove = Some(idx);
+                            // Delete button (disabled if only 1 axis)
+                            ui.add_enabled_ui(num_axes > 1, |ui| {
+                                if ui.add(Button::new("🗑")).clicked() {
+                                    to_remove = Some(idx);
+                                }
+                            });
+                        });
+                    });
+
+                    ui.horizontal(|ui| {
+                        // Colat slider
+                        ui.add_enabled_ui(!app.params.lock_cuts || idx == 0, |ui| {
+                            if ui
+                                .add(
+                                    egui::Slider::new(
+                                        &mut app.params.axes[idx].colat,
+                                        MIN_COLAT..=MAX_COLAT,
+                                    )
+                                    .smallest_positive(COLAT_STEP)
+                                    .fixed_decimals(COLAT_DECIMALS)
+                                    .step_by(COLAT_STEP)
+                                    .drag_value_speed(COLAT_SPEED)
+                                    .show_value(true)
+                                    .trailing_fill(true),
+                                )
+                                .changed()
+                            {
+                                if app.params.lock_cuts {
+                                    // Sync all colats from this slider
+                                    let new_colat = app.params.axes[idx].colat;
+                                    for entry in &mut app.params.axes {
+                                        entry.colat = new_colat;
+                                    }
+                                }
+                                changed = true;
                             }
                         });
 
-                        // Rotation buttons
-                        if ui.add_enabled(buttons_enabled, Button::new("↻")).clicked() {
-                            app.start_rotation(idx, true);
-                        }
-                        if ui.add_enabled(buttons_enabled, Button::new("↺")).clicked() {
-                            app.start_rotation(idx, false);
-                        }
-                    });
-
-                    // Colat slider
-                    ui.add_enabled_ui(!app.params.lock_cuts || idx == 0, |ui| {
-                        if ui
-                            .add(
-                                egui::Slider::new(
-                                    &mut app.params.axes[idx].colat,
-                                    MIN_COLAT..=MAX_COLAT,
-                                )
-                                .smallest_positive(COLAT_STEP)
-                                .fixed_decimals(COLAT_DECIMALS)
-                                .step_by(COLAT_STEP)
-                                .drag_value_speed(COLAT_SPEED)
-                                .show_value(true)
-                                .trailing_fill(true),
-                            )
-                            .changed()
-                        {
-                            if app.params.lock_cuts {
-                                // Sync all colats from this slider
-                                let new_colat = app.params.axes[idx].colat;
-                                for entry in &mut app.params.axes {
-                                    entry.colat = new_colat;
-                                }
+                        // Reorder buttons
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            if ui
+                                .add_enabled(idx + 1 < num_axes, Button::new("↓"))
+                                .clicked()
+                            {
+                                swap_up = Some(idx + 1);
                             }
-                            changed = true;
-                        }
+                            if ui.add_enabled(idx > 0, Button::new("↑")).clicked() {
+                                swap_up = Some(idx);
+                            }
+                        });
                     });
                 }
             });
 
-            // Handle removal
+            if let Some(idx) = swap_up {
+                app.params.axes.swap(idx - 1, idx);
+                changed = true;
+            }
             if let Some(idx) = to_remove {
                 app.params.axes.remove(idx);
                 changed = true;
