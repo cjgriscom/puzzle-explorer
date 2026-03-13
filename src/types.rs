@@ -122,7 +122,7 @@ impl Default for OrbitAnalysisState {
         Self {
             annotate_pieces: true,
             number_pieces: false,
-            auto_update_orbits: true,
+            auto_update_orbits: false,
             auto_update_groups: false,
             orbits_stale: false,
             groups_stale: false,

@@ -12,13 +12,15 @@ pub mod puzzle_params;
 pub const AXIS_DEFINITIONS_POS: [f32; 2] = [20.0, 40.0];
 pub const PUZZLE_PARAMS_POS: [f32; 2] = [20.0, 225.0];
 pub const ORBIT_ANALYSIS_POS: [f32; 2] = [20.0, 450.0];
-pub const GAP_CONSOLE_POS: [f32; 2] = [460.0, 40.0];
-pub const CONTROLS_POS: [f32; 2] = [460.0, 90.0];
+pub const GAP_CONSOLE_POS: [f32; 2] = [440.0, 40.0];
+pub const CONTROLS_POS: [f32; 2] = [440.0, 90.0];
+pub const MEASURE_AXIS_ANGLE_POS: [f32; 2] = CONTROLS_POS;
 
-pub const AXIS_DEFINITIONS_WIDTH: f32 = 400.0;
-pub const PUZZLE_PARAMS_WIDTH: f32 = 400.0;
-pub const ORBIT_ANALYSIS_WIDTH: f32 = 400.0;
+pub const AXIS_DEFINITIONS_WIDTH: f32 = 380.0;
+pub const PUZZLE_PARAMS_WIDTH: f32 = 380.0;
+pub const ORBIT_ANALYSIS_WIDTH: f32 = 380.0;
 pub const GAP_CONSOLE_WIDTH: f32 = 500.0;
+pub const MEASURE_AXIS_ANGLE_WIDTH: f32 = 220.0;
 
 pub const MAX_PUZZLE_AXES: usize = 26;
 pub const MIN_N: u32 = 2;

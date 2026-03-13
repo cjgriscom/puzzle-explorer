@@ -88,10 +88,10 @@ pub fn build_menu_bar(app: &mut PuzzleApp, ctx: &egui::Context) {
                     let mut cancel = false;
                     ui.horizontal(|ui| {
                         ui.add(TextEdit::singleline(buf).desired_width(120.0));
-                        if ui.button("OK").clicked() {
+                        if ui.add(Button::new("✔").small()).clicked() {
                             do_apply = true;
                         }
-                        if ui.button("Cancel").clicked() {
+                        if ui.add(Button::new("✖").small()).clicked() {
                             cancel = true;
                         }
                     });

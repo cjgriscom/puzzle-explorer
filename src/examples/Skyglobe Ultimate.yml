@@ -43,10 +43,7 @@ axis_defs:
       n: 3
       angle_range_deg: 360.0
       invert_range: false
-  visible_axes:
-  - Tet_A
-  - Tet_B
-  - Tet_Pattern
+  visible_axes: []
 orbit_state:
   fudged_mode: true
   fudged_mode_settings:

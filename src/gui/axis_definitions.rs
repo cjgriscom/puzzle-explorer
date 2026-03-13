@@ -250,10 +250,10 @@ pub fn build_axis_definitions_window(app: &mut PuzzleApp, ctx: &egui::Context) {
                         ui.horizontal(|ui| {
                             if let Some((_, ref mut buf)) = app.axis_defs.rename_state {
                                 ui.text_edit_singleline(buf);
-                                if ui.button("OK").clicked() {
+                                if ui.button("✔").clicked() {
                                     do_rename = true;
                                 }
-                                if ui.button("Cancel").clicked() {
+                                if ui.button("✖").clicked() {
                                     cancel = true;
                                 }
                             }

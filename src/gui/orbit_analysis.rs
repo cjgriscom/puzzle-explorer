@@ -147,10 +147,8 @@ pub fn build_orbit_analysis_window(app: &mut PuzzleApp, ctx: &egui::Context) {
                     let msg = app.compute_output.borrow().clone();
                     if msg.starts_with("Error:") {
                         ui.label(egui::RichText::new(msg).color(egui::Color32::RED));
-                    } else {
-                        ui.label(format!("Pieces: {}", orbit.face_count));
+                        return;
                     }
-                    ui.label(format!("Total Orbits: {}", orbit.orbit_count));
 
                     let mut orbits_with_members: Vec<(usize, usize, Vec<usize>)> = (0..orbit
                         .orbit_count)
@@ -172,6 +170,13 @@ pub fn build_orbit_analysis_window(app: &mut PuzzleApp, ctx: &egui::Context) {
                         })
                         .filter(|(_, _, members)| members.len() > 1)
                         .collect();
+
+                    let singleton_count = orbit.orbit_count.saturating_sub(orbits_with_members.len());
+                    ui.label(format!("Visible Pieces: {}", orbit.face_count));
+                    if singleton_count > 0 {
+                        ui.label(format!("Singletons: {}", singleton_count));
+                    }
+                    ui.label(format!("Orbits: {}", orbits_with_members.len()));
 
                     // Give them an original color index based on the unsorted layout (skipping singletons)
                     (0..orbits_with_members.len()).for_each(|i| {

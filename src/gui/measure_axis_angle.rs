@@ -1,10 +1,13 @@
 use crate::app::PuzzleApp;
 use crate::gui::axis_combo_box;
+use crate::gui::{MEASURE_AXIS_ANGLE_POS, MEASURE_AXIS_ANGLE_WIDTH};
 
 pub fn build_measure_axis_angle_window(app: &mut PuzzleApp, ctx: &egui::Context) {
     egui::Window::new("Measure Axis Angle")
         .open(&mut app.window_state.show_measure_axis_angle)
         .resizable(true)
+        .default_pos(MEASURE_AXIS_ANGLE_POS)
+        .default_width(MEASURE_AXIS_ANGLE_WIDTH)
         .show(ctx, |ui| {
             let available = app.axis_defs.available_axis_names();
 
