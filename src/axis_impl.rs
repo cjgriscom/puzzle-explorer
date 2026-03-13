@@ -1,5 +1,5 @@
 use crate::types::{AxisDefinition, AxisDefinitions, DerivedAxis};
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 
 use glam::{DAffine3, DVec3};
 use puzzle_explorer_math::geometry::derive_axis_angle;
@@ -316,15 +316,16 @@ impl AxisDefinitions {
             in_degree.insert(d.name.clone(), base_deps.len());
         }
 
-        let mut queue: Vec<String> = Vec::new();
-        for (name, deg) in &in_degree {
-            if *deg == 0 {
-                queue.push(name.clone());
-            }
-        }
+        // Use definition order for deterministic resolution
+        // VecDeque with pop_front gives FIFO order matching definition order
+        let mut queue: VecDeque<String> = names
+            .iter()
+            .filter(|name| in_degree.get(*name).copied().unwrap_or(1) == 0)
+            .cloned()
+            .collect();
 
         let mut resolved_order: Vec<String> = Vec::new();
-        while let Some(name) = queue.pop() {
+        while let Some(name) = queue.pop_front() {
             resolved_order.push(name.clone());
             for other_d in &self.definitions {
                 if in_degree.get(&other_d.name).copied().unwrap_or(0) == 0 {
@@ -339,7 +340,7 @@ impl AxisDefinitions {
                     let deg = in_degree.get_mut(&other_d.name).unwrap();
                     *deg = deg.saturating_sub(1);
                     if *deg == 0 {
-                        queue.push(other_d.name.clone());
+                        queue.push_back(other_d.name.clone());
                     }
                 }
             }
