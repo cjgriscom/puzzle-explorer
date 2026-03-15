@@ -1031,6 +1031,7 @@ impl eframe::App for PuzzleApp {
                         three.update_face_dots(&data, self.orbit_state.number_pieces);
                     }
                     self.orbit_dreadnaut.clear();
+                    self.pending_dreadnaut_requests.clear();
 
                     let mut dreadnaut_batch = Vec::new();
                     for (oi, gens) in data.generators.iter().enumerate() {
@@ -1082,12 +1083,13 @@ impl eframe::App for PuzzleApp {
 
                 if self.orbit_state.auto_update_groups
                     && let Some(orbit) = &self.orbit_result
+                    && let Some(gens) = orbit.generators.get(oi)
                     && let None = self.gap_cache.get(&dreadnaut_res)
                 {
                     self.request_counter += 1;
                     let new_req_id = self.request_counter;
                     self.pending_gap_requests.insert(new_req_id, dreadnaut_res);
-                    let cmd = GapManager::construct_group_cmd(&orbit.generators[oi]);
+                    let cmd = GapManager::construct_group_cmd(gens);
                     self.gap_manager.send_queued_command(new_req_id, &cmd);
                 }
             }
