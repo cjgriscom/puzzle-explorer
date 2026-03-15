@@ -5,7 +5,7 @@ use crate::app::PuzzleApp;
 use crate::color::hex_to_color32;
 use crate::gui::{
     AXIS_ANGLE_DECIMALS, AXIS_ANGLE_SPEED, AXIS_DEFINITIONS_POS, AXIS_DEFINITIONS_WIDTH,
-    EULER_DECIMALS, EULER_SPEED, axis_combo_box,
+    EULER_DECIMALS, EULER_SPEED, MAX_N, MIN_N, axis_combo_box,
 };
 use crate::types::{AxisDefinition, DerivedAxis, PuzzleParams};
 
@@ -480,14 +480,22 @@ pub fn build_axis_definitions_window(app: &mut PuzzleApp, ctx: &egui::Context) {
                                 ui.horizontal(|ui| {
                                     ui.label("nA:");
                                     if ui
-                                        .add(egui::DragValue::new(n_a).range(2..=8).speed(0.05))
+                                        .add(
+                                            egui::DragValue::new(n_a)
+                                                .range(MIN_N..=MAX_N)
+                                                .speed(0.05),
+                                        )
                                         .changed()
                                     {
                                         changed = true;
                                     }
                                     ui.label("nB:");
                                     if ui
-                                        .add(egui::DragValue::new(n_b).range(2..=8).speed(0.05))
+                                        .add(
+                                            egui::DragValue::new(n_b)
+                                                .range(MIN_N..=MAX_N)
+                                                .speed(0.05),
+                                        )
                                         .changed()
                                     {
                                         changed = true;

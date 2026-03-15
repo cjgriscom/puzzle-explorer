@@ -24,7 +24,7 @@ pub const MEASURE_AXIS_ANGLE_WIDTH: f32 = 220.0;
 
 pub const MAX_PUZZLE_AXES: usize = 26;
 pub const MIN_N: u32 = 2;
-pub const MAX_N: u32 = 8;
+pub const MAX_N: u32 = 15;
 pub const MIN_COLAT: f32 = 10.0;
 pub const MAX_COLAT: f32 = 170.0;
 pub const COLAT_STEP: f64 = 0.1;
