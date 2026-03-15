@@ -9,6 +9,8 @@ pub fn build_gap_console_window(app: &mut PuzzleApp, ctx: &egui::Context) {
         _ => "GAP Console",
     };
 
+    let mut do_gap_reset = false;
+
     egui::Window::new(gap_title)
         .id("GAP Console".into()) // unchanging ID
         .default_pos(GAP_CONSOLE_POS)
@@ -42,10 +44,7 @@ pub fn build_gap_console_window(app: &mut PuzzleApp, ctx: &egui::Context) {
                         .on_hover_text("Reset GAP worker")
                         .clicked()
                     {
-                        app.pending_gap_requests.clear();
-                        app.gap_cache.clear();
-                        app.gap_manager.reset();
-                        app.gap_manager.init(ctx.clone());
+                        do_gap_reset = true;
                     }
                     ui.label("gap>");
                     let response = ui.add(
@@ -60,4 +59,7 @@ pub fn build_gap_console_window(app: &mut PuzzleApp, ctx: &egui::Context) {
                 });
             }
         });
+    if do_gap_reset {
+        app.reset_gap(ctx);
+    }
 }

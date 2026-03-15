@@ -4,6 +4,7 @@ use serde::Deserialize;
 use serde::Serialize;
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::collections::VecDeque;
 use std::rc::Rc;
 use wasm_bindgen::JsCast;
 use wasm_bindgen::prelude::*;
@@ -539,9 +540,11 @@ pub struct PuzzleApp {
     pending_response: Rc<RefCell<Option<WorkerResponse>>>,
     pub(crate) compute_output: Rc<RefCell<String>>,
 
+    // Indexed worker pipeline
     stored_geometry: Option<GeometryResult>,
     geometry_index: usize,
     pub(crate) orbit_result: Option<OrbitResult>,
+    gap_trickle_queue: VecDeque<(usize, usize, String)>, // (geom_idx, req, cmd)
 
     // GUI states
     pub(crate) window_state: WindowState,
@@ -566,7 +569,7 @@ pub struct PuzzleApp {
 
     request_counter: usize,
     pending_dreadnaut_requests: HashMap<usize, (usize, usize)>, // req_id -> (orbit_index, geometry_index)
-    pub(crate) pending_gap_requests: HashMap<usize, String>,    // req_id -> dreadnaut hash
+    pending_gap_requests: HashMap<usize, String>,               // req_id -> dreadnaut hash
     pub(crate) orbit_dreadnaut: HashMap<usize, String>,
     pub(crate) gap_cache: HashMap<String, Option<crate::gap::GapGroupResult>>,
 }
@@ -626,6 +629,7 @@ impl PuzzleApp {
             stored_geometry: None,
             geometry_index: 0,
             orbit_result: None,
+            gap_trickle_queue: VecDeque::new(),
 
             window_state: WindowState::default(),
             params: PuzzleParams::default(),
@@ -662,6 +666,17 @@ impl PuzzleApp {
         app.gap_manager.init(cc.egui_ctx.clone());
         app.spawn_geometry_worker();
         app
+    }
+
+    /// Hard reset and clear in case GAP stalls
+    /// TODO: ultimately, the global cache should not clear, but
+    /// only after certain it's bug free
+    pub fn reset_gap(&mut self, ctx: &egui::Context) {
+        self.pending_gap_requests.clear();
+        self.gap_trickle_queue.clear();
+        self.gap_cache.clear();
+        self.gap_manager.reset();
+        self.gap_manager.init(ctx.clone());
     }
 
     /// Apply imported yml onto existing GUI state
@@ -1072,8 +1087,10 @@ impl eframe::App for PuzzleApp {
 
         // -- Check dreadnaut worker results ---
         self.dreadnaut_data.process_responses();
+        // -- Process GAP worker results ---
         self.gap_manager.process_responses();
 
+        // -- Enqueue dreadnaut results to GAP trickle queue for current geometry --
         for (req_id, dreadnaut_res) in self.dreadnaut_data.completed_jobs.drain(..) {
             if let Some(&(oi, geom_idx)) = self.pending_dreadnaut_requests.get(&req_id)
                 && geom_idx == self.geometry_index
@@ -1090,7 +1107,8 @@ impl eframe::App for PuzzleApp {
                     let new_req_id = self.request_counter;
                     self.pending_gap_requests.insert(new_req_id, dreadnaut_res);
                     let cmd = GapManager::construct_group_cmd(gens);
-                    self.gap_manager.send_queued_command(new_req_id, &cmd);
+                    self.gap_trickle_queue // Add to local queue
+                        .push_back((geom_idx, new_req_id, cmd));
                 }
             }
         }
@@ -1098,6 +1116,18 @@ impl eframe::App for PuzzleApp {
         for (req_id, res) in self.gap_manager.completed_jobs.drain(..) {
             if let Some(hash) = &self.pending_gap_requests.remove(&req_id) {
                 self.gap_cache.insert(hash.to_string(), Some(res));
+            }
+        }
+
+        // Check GAP backlog and push from trickle queue if it's from current geometry
+        while self.gap_manager.backlog() < 1
+            && let Some(queue_item) = self.gap_trickle_queue.pop_front()
+        {
+            let geom_idx = queue_item.0;
+            if geom_idx == self.geometry_index {
+                let req_id = queue_item.1;
+                let cmd = queue_item.2;
+                self.gap_manager.send_queued_command(req_id, &cmd);
             }
         }
 

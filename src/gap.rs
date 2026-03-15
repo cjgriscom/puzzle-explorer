@@ -93,6 +93,10 @@ impl GapManager {
         }
     }
 
+    pub fn backlog(&self) -> usize {
+        self.pending_commands.len() + self.queue.len() + self.pending_messages.borrow().len()
+    }
+
     pub fn process_responses(&mut self) {
         let mut new_msgs = Vec::new();
         if let Ok(mut pending) = self.pending_messages.try_borrow_mut() {
