@@ -1,6 +1,7 @@
 use egui::Visuals;
 use glam::DVec3;
 use puzzle_explorer_math::canon;
+use puzzle_explorer_math::generator;
 use serde::Deserialize;
 use serde::Serialize;
 use std::cell::RefCell;
@@ -1067,8 +1068,12 @@ impl eframe::App for PuzzleApp {
                             self.pending_dreadnaut_requests
                                 .insert(req_id, (oi, self.geometry_index));
 
-                            let script = canon::orbit_graph_hash_script(gens, n_vertices);
-                            dreadnaut_batch.push((req_id, script));
+                            match canon::orbit_graph_hash_script(0, gens, n_vertices) {
+                                Ok(script) => dreadnaut_batch.push((req_id, script)),
+                                Err(e) => {
+                                    *self.compute_output.borrow_mut() = format!("Error: {}", e);
+                                }
+                            };
                         }
                     }
                     self.dreadnaut_data.enqueue_batch(dreadnaut_batch);
@@ -1103,13 +1108,15 @@ impl eframe::App for PuzzleApp {
 
                 if self.orbit_state.auto_update_groups
                     && let Some(orbit) = &self.orbit_result
-                    && let Some(gens) = orbit.generators.get(oi)
+                    && let Some(generator) = orbit.generators.get(oi)
                     && let None = self.gap_cache.get(&dreadnaut_res)
                 {
                     self.request_counter += 1;
                     let new_req_id = self.request_counter;
                     self.pending_gap_requests.insert(new_req_id, dreadnaut_res);
-                    let cmd = GapManager::construct_group_cmd(gens);
+                    let cmd = GapManager::construct_group_cmd(&generator::generator_to_gap_string(
+                        1, generator,
+                    ));
                     self.gap_trickle_queue // Add to local queue
                         .push_back((geom_idx, new_req_id, cmd));
                 }

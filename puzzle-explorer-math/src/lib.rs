@@ -1,5 +1,6 @@
 pub mod canon;
 pub mod circle;
+pub mod generator;
 pub mod geometry;
 pub mod math;
 pub mod orbit;

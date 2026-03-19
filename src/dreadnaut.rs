@@ -126,7 +126,10 @@ mod tests {
     use crate::test::wrap_promise_in_timeout;
 
     use super::*;
-    use puzzle_explorer_math::canon;
+    use puzzle_explorer_math::{
+        canon,
+        generator::{self, Generator},
+    };
     use wasm_bindgen::JsValue;
     use wasm_bindgen_futures::JsFuture;
 
@@ -149,13 +152,11 @@ mod tests {
         let mut dreadnaut_test = DreadnautTest::new();
 
         for (generator, expected) in test_pairs {
-            let gen_raw = crate::test::parse_generator_string(generator).unwrap();
-
-            let (gen_renumbered, num_vertices) = canon::renumber_generator_for_dreadnaut(&gen_raw);
-            dreadnaut_test.enqueue_script(canon::orbit_graph_hash_script(
-                &gen_renumbered,
-                num_vertices,
-            ));
+            let gen_raw = generator::parse_gap_string(generator).unwrap();
+            let (gen_renumbered, num_vertices) = gen_raw.renumber(1);
+            dreadnaut_test.enqueue_script(
+                canon::orbit_graph_hash_script(1, &gen_renumbered, num_vertices).unwrap(),
+            );
 
             assert_eq!(dreadnaut_test.await_result().await.unwrap(), expected);
         }

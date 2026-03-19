@@ -323,38 +323,10 @@ impl GapManager {
         Ok(renumbered)
     }
 
-    pub fn format_group_generator(
-        src_is_one_indexed: bool,
-        generators: &[Vec<Vec<usize>>],
-    ) -> String {
-        let off = if src_is_one_indexed { 0 } else { 1 };
-        let mut gap_parts = Vec::new();
-        for generator in generators {
-            if generator.is_empty() {
-                gap_parts.push("()".to_string());
-            } else {
-                let cycle_str = generator
-                    .iter()
-                    .map(|cycle| {
-                        let c_str = cycle
-                            .iter()
-                            .map(|&idx| (idx + off).to_string()) // 1-indexed for GAP
-                            .collect::<Vec<_>>()
-                            .join(",");
-                        format!("({})", c_str)
-                    })
-                    .collect::<Vec<_>>()
-                    .join("");
-                gap_parts.push(cycle_str);
-            }
-        }
-        format!("[{}]", gap_parts.join(","))
-    }
-
-    pub fn construct_group_cmd(generators: &[Vec<Vec<usize>>]) -> String {
+    pub fn construct_group_cmd(generator_gap_string: &str) -> String {
         format!(
             "g := Group({});; Print(Size(g), \"\\n\", StructureDescription(g));",
-            Self::format_group_generator(false, generators)
+            generator_gap_string
         )
     }
 }

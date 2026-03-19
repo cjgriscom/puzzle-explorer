@@ -3,6 +3,7 @@ use crate::color::ORBIT_COLORS;
 use crate::gap::GapManager;
 use crate::gui::toggle;
 use crate::gui::{ORBIT_ANALYSIS_POS, ORBIT_ANALYSIS_WIDTH};
+use puzzle_explorer_math::generator;
 
 pub fn build_orbit_analysis_window(app: &mut PuzzleApp, ctx: &egui::Context) {
     let buttons_enabled = app.anim.is_none();
@@ -207,7 +208,7 @@ pub fn build_orbit_analysis_window(app: &mut PuzzleApp, ctx: &egui::Context) {
                                     ui.label(format!(
                                         "Generator: {}",
                                         match GapManager::reconstruct_generator_numbering_from_members(&orbit.generators[oi], &members) {
-                                            Ok(renumbered) => GapManager::format_group_generator(true, &renumbered),
+                                            Ok(renumbered) => generator::generator_to_gap_string(0, &renumbered),
                                             Err(e) => e,
                                         }
                                     ));
