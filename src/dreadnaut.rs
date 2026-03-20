@@ -1,17 +1,50 @@
-use std::cell::RefCell;
 use std::rc::Rc;
+use std::{cell::RefCell, collections::VecDeque};
 use wasm_bindgen::JsCast;
 use wasm_bindgen::closure::Closure;
 use web_sys::{MessageEvent, Worker, WorkerOptions};
+
+use puzzle_explorer_math::canon::OrbitCanonizer;
+
+pub enum DreadnautJob {
+    Orbit(OrbitCanonizer),
+    Error(String),
+}
+
+impl DreadnautJob {
+    pub fn generate_script(&mut self) -> Result<String, String> {
+        match self {
+            DreadnautJob::Orbit(canonizer) => canonizer.generate_script(),
+            DreadnautJob::Error(e) => Err(e.clone()),
+        }
+    }
+
+    pub fn process_script_result(&mut self, s: &str) -> Result<(), String> {
+        match self {
+            DreadnautJob::Orbit(canonizer) => canonizer.process_script_result(s),
+            DreadnautJob::Error(e) => Err(e.clone()),
+        }
+    }
+
+    #[cfg(test)]
+    pub fn unwrap_orbit(self) -> OrbitCanonizer {
+        match self {
+            DreadnautJob::Orbit(canonizer) => canonizer,
+            DreadnautJob::Error(e) => panic!("unwrap_orbit called on error: {}", e),
+            //_ => panic!("unwrap_orbit called on non-orbit job"),
+        }
+    }
+}
 
 pub struct DreadnautManager {
     pub worker: Option<Worker>,
     pub task_start_time: Option<f64>,
     pub is_computing: bool,
-    pub queue: Vec<usize>,
-    pub completed_jobs: Vec<(usize, String)>,
+    pub queue: VecDeque<(usize, DreadnautJob)>,
+    pub completed_jobs: Vec<(usize, DreadnautJob)>,
     pub pending_responses: Rc<RefCell<Vec<String>>>,
     wakeup: Rc<dyn Fn()>,
+    cur_result: Rc<RefCell<Option<String>>>,
     _on_message: Option<Closure<dyn FnMut(MessageEvent)>>,
     _on_error: Option<Closure<dyn FnMut(MessageEvent)>>,
 }
@@ -22,10 +55,11 @@ impl DreadnautManager {
             worker: None,
             task_start_time: None,
             is_computing: false,
-            queue: Vec::new(),
+            queue: VecDeque::new(),
             completed_jobs: Vec::new(),
             pending_responses: Rc::new(RefCell::new(Vec::new())),
             wakeup: Rc::new(wakeup),
+            cur_result: Rc::new(RefCell::new(None)),
             _on_message: None,
             _on_error: None,
         }
@@ -40,6 +74,7 @@ impl DreadnautManager {
 
         if let Ok(w) = Worker::new_with_options("./dreadnaut/dreadnaut-worker.js", &options) {
             let response_clone = self.pending_responses.clone();
+            let cur_result_clone = self.cur_result.clone();
             let wakeup = self.wakeup.clone();
             let on_msg = Closure::wrap(Box::new(move |e: MessageEvent| {
                 let mut pushed = 0;
@@ -49,16 +84,22 @@ impl DreadnautManager {
                     && let Ok(res_val) = js_sys::Reflect::get(&data, &"data".into())
                     && let Some(s) = res_val.as_string()
                 {
-                    // Ported from DreadnautInterface.java in GroupExplorer
                     for line in s.split('\n') {
-                        let trimmed = line.trim();
-                        if let Some(start) = trimmed.find('[')
-                            && let Some(end) = trimmed.rfind(']')
-                            && end > start
-                        {
-                            let hash = &trimmed[start..=end];
-                            response_clone.borrow_mut().push(hash.to_string());
-                            pushed += 1;
+                        if line.ends_with("START") {
+                            cur_result_clone.borrow_mut().replace(String::new());
+                        } else if let Some(mut cur_result) = cur_result_clone.take() {
+                            if line.ends_with("END") {
+                                response_clone.borrow_mut().push(cur_result);
+                                pushed += 1;
+                            } else {
+                                let mut trimmed_line = line;
+                                while trimmed_line.starts_with("> ") {
+                                    trimmed_line = &trimmed_line[2..];
+                                }
+                                cur_result.push_str(trimmed_line);
+                                cur_result.push('\n');
+                                cur_result_clone.replace(Some(cur_result));
+                            }
                         }
                     }
                 }
@@ -79,13 +120,17 @@ impl DreadnautManager {
         }
     }
 
-    pub fn enqueue_batch(&mut self, jobs: Vec<(usize, String)>) {
+    pub fn enqueue_batch(&mut self, jobs: Vec<(usize, DreadnautJob)>) {
         // Enqueue a batch of scripts with unique IDs
         let mut full_script = String::new();
 
-        for (request_id, script) in jobs {
-            full_script.push_str(&script);
-            self.queue.push(request_id);
+        for (request_id, mut job) in jobs {
+            let (job, script) = match job.generate_script() {
+                Ok(script) => (job, script),
+                Err(e) => (DreadnautJob::Error(e), String::new()),
+            };
+            full_script.push_str(format!("\"START\\n\"\n{}\"END\\n\"\n", script).as_str());
+            self.queue.push_back((request_id, job));
         }
 
         if !full_script.is_empty()
@@ -108,9 +153,12 @@ impl DreadnautManager {
 
         if !new_responses.is_empty() {
             for res in new_responses {
-                if !self.queue.is_empty() {
-                    let request_id = self.queue.remove(0);
-                    self.completed_jobs.push((request_id, res));
+                if let Some((request_id, mut job)) = self.queue.pop_front() {
+                    let job = match job.process_script_result(&res) {
+                        Ok(_) => job,
+                        Err(e) => DreadnautJob::Error(e),
+                    };
+                    self.completed_jobs.push((request_id, job));
                 }
             }
             if self.queue.is_empty() {
@@ -126,39 +174,142 @@ mod tests {
     use crate::test::wrap_promise_in_timeout;
 
     use super::*;
-    use puzzle_explorer_math::{
-        canon,
-        generator::{self, Generator},
-    };
+    use puzzle_explorer_math::generator;
+    use std::collections::HashSet;
     use wasm_bindgen::JsValue;
     use wasm_bindgen_futures::JsFuture;
 
+    macro_rules! test_log {
+        ($($arg:tt)*) => {
+            web_sys::console::log_1(&wasm_bindgen::JsValue::from_str(&format!($($arg)*)));
+        };
+    }
+
+    /// Dev/debug test in browser
+    /// Remove #[ignore] and run with:
+    ///   wasm-pack test --chrome --headless . -- test_dev
+    #[ignore]
     #[wasm_bindgen_test::wasm_bindgen_test]
-    async fn test_canonized_orbits() {
+    async fn test_dev() {
+        let mut dreadnaut_test = DreadnautTest::new();
+        {
+            let canonizer = OrbitCanonizer::new(
+                &generator::parse_gap_string(
+                    "[(1,2,5,4)(8,9,12,11),(3,4,8,7)(5,6,10,9),(4,5,9,8)]",
+                )
+                .unwrap(),
+            );
+            dreadnaut_test.enqueue_job(DreadnautJob::Orbit(canonizer));
+            let canonizer = dreadnaut_test.await_result().await.unwrap().unwrap_orbit();
+            test_log!("{}", canonizer.get_canonical_graph_as_string());
+            test_log!("{}", canonizer.get_hash());
+        }
+        {
+            let canonizer = OrbitCanonizer::new(
+                &generator::parse_gap_string(
+                    "[(1,2,5,4)(8,9,12,11),(3,4,8,7)(5,6,10,9),(8,9,5,4)]",
+                )
+                .unwrap(),
+            );
+            dreadnaut_test.enqueue_job(DreadnautJob::Orbit(canonizer));
+            let canonizer = dreadnaut_test.await_result().await.unwrap().unwrap_orbit();
+            test_log!("{}", canonizer.get_canonical_graph_as_string());
+            test_log!("{}", canonizer.get_hash());
+        }
+        panic!("force output");
+    }
+
+    #[wasm_bindgen_test::wasm_bindgen_test]
+    async fn test_canonized_orbits_consistency() {
         let test_pairs = vec![
             (
                 "[(6,12,18)(24,28,26),(6,21,24)(8,29,12)]",
-                "[N1a6b3ea 60141710 60c94144]",
+                "[o1 a7b74020 9bc23d37 7f67ff53]",
             ),
             (
                 "[(14,26)(30,52)(38,47)(62,67),(4,52,62)(14,58,18)(26,38,30)]",
-                "[N67bbf135 57b681ea e896b98]",
+                "[o1 3ba5a1a4 f3f5cde7 15ecf125]",
             ),
             (
                 "[(5,17)(35,46)(42,51)(61,66),(5,35,42)(13,57,17)(27,61,46)]",
-                "[N68d0be14 56a98d49 d755d39]",
+                "[o1 3ba5a1a4 f3f5cde7 15ecf125]",
             ),
         ];
         let mut dreadnaut_test = DreadnautTest::new();
 
         for (generator, expected) in test_pairs {
-            let gen_raw = generator::parse_gap_string(generator).unwrap();
-            let (gen_renumbered, num_vertices) = gen_raw.renumber(1);
-            dreadnaut_test.enqueue_script(
-                canon::orbit_graph_hash_script(1, &gen_renumbered, num_vertices).unwrap(),
-            );
+            let canonizer = OrbitCanonizer::new(&generator::parse_gap_string(generator).unwrap());
+            dreadnaut_test.enqueue_job(DreadnautJob::Orbit(canonizer));
+            let canonizer = dreadnaut_test.await_result().await.unwrap().unwrap_orbit();
+            assert_eq!(canonizer.get_hash(), expected);
+        }
+    }
 
-            assert_eq!(dreadnaut_test.await_result().await.unwrap(), expected);
+    /// Check some direction and overlap cases
+    #[wasm_bindgen_test::wasm_bindgen_test]
+    async fn test_canonized_orbits_collision() {
+        let mut dreadnaut_test = DreadnautTest::new();
+        let tests = vec![
+            (false, ["[(2,3)(5,6),(5,6)(7,8)]", "[(2,3)(5,6),(7,8)]"]),
+            (true, ["[(1,2,3)]", "[(3,2,1)]"]),
+            (true, ["[(1,2,3),(4,3,2)]", "[(3,2,1),(2,3,4)]"]),
+            (true, ["[(1,2)]", "[(2,1),(1,2)]"]),
+            (
+                false, // Quaternion cube-like construction with one direction flipped
+                [
+                    "[(1,2,8)(6,5,4),(2,4,3)(7,6,8)]",
+                    "[(2,1,8)(6,5,4),(2,4,3)(7,6,8)]",
+                ],
+            ),
+            (
+                false,
+                [
+                    // Magic cogra, flipping one direction
+                    "[(1,2,5,4)(8,9,12,11),(3,4,8,7)(5,6,10,9)]",
+                    "[(1,2,5,4)(8,9,12,11),(3,4,8,7)(9,10,6,5)]",
+                ],
+            ),
+            (
+                true,
+                [
+                    // Magic cogra extra cell, flipping middle cell is isomorphic
+                    "[(1,2,5,4)(8,9,12,11),(3,4,8,7)(5,6,10,9),(4,5,9,8)]",
+                    "[(1,2,5,4)(8,9,12,11),(3,4,8,7)(5,6,10,9),(8,9,5,4)]",
+                ],
+            ),
+            (
+                true,
+                [
+                    // Magic cogra, flipping two cells is isomorphic
+                    "[(1,2,5,4)(8,9,12,11),(3,4,8,7)(5,6,10,9)]",
+                    "[(1,2,5,4)(8,9,12,11),(7,8,4,3)(9,10,6,5)]",
+                ],
+            ),
+        ];
+
+        for (should_collide, generators) in tests {
+            let mut results = Vec::new();
+            for generator in generators {
+                let canonizer =
+                    OrbitCanonizer::new(&generator::parse_gap_string(generator).unwrap());
+                dreadnaut_test.enqueue_job(DreadnautJob::Orbit(canonizer));
+                let canonizer = dreadnaut_test.await_result().await.unwrap().unwrap_orbit();
+                results.push(canonizer.get_hash());
+            }
+
+            let results_len = results.len();
+            let results_unique = results.into_iter().collect::<HashSet<_>>().len();
+
+            #[allow(clippy::collapsible_else_if)]
+            if should_collide {
+                if results_len == results_unique {
+                    panic!("expected collision for {:?}", generators);
+                }
+            } else {
+                if results_len != results_unique {
+                    panic!("expected no collision for {:?}", generators);
+                }
+            }
         }
     }
 
@@ -195,11 +346,11 @@ mod tests {
             wrap_promise_in_timeout(1000, promise)
         }
 
-        fn enqueue_script(&mut self, script: String) {
-            self.dreadnaut_manager.enqueue_batch(vec![(0, script)]);
+        fn enqueue_job(&mut self, job: DreadnautJob) {
+            self.dreadnaut_manager.enqueue_batch(vec![(0, job)]);
         }
 
-        async fn await_result(&mut self) -> Result<String, String> {
+        async fn await_result(&mut self) -> Result<DreadnautJob, String> {
             let promise = std::mem::take(&mut self.promise).unwrap();
             JsFuture::from(promise)
                 .await

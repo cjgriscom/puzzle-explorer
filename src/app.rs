@@ -1,6 +1,6 @@
 use egui::Visuals;
 use glam::DVec3;
-use puzzle_explorer_math::canon;
+use puzzle_explorer_math::canon::OrbitCanonizer;
 use puzzle_explorer_math::generator;
 use serde::Deserialize;
 use serde::Serialize;
@@ -16,6 +16,7 @@ use puzzle_explorer_math::circle::Circle;
 use puzzle_explorer_math::math::TAU;
 
 use crate::color::*;
+use crate::dreadnaut::DreadnautJob;
 use crate::dreadnaut::DreadnautManager;
 use crate::examples::default_example;
 use crate::gap::GapManager;
@@ -1053,7 +1054,7 @@ impl eframe::App for PuzzleApp {
                     self.pending_dreadnaut_requests.clear();
 
                     let mut dreadnaut_batch = Vec::new();
-                    for (oi, gens) in data.generators.iter().enumerate() {
+                    for (oi, generator) in data.generators.iter().enumerate() {
                         let n_vertices = data
                             .face_orbit_indices
                             .iter()
@@ -1062,18 +1063,14 @@ impl eframe::App for PuzzleApp {
                                 None => false,
                             })
                             .count();
-                        if n_vertices > 1 && !gens.is_empty() {
+                        if n_vertices > 1 && !generator.is_empty() {
                             self.request_counter += 1;
                             let req_id = self.request_counter;
                             self.pending_dreadnaut_requests
                                 .insert(req_id, (oi, self.geometry_index));
 
-                            match canon::orbit_graph_hash_script(0, gens, n_vertices) {
-                                Ok(script) => dreadnaut_batch.push((req_id, script)),
-                                Err(e) => {
-                                    *self.compute_output.borrow_mut() = format!("Error: {}", e);
-                                }
-                            };
+                            let canonizer = OrbitCanonizer::new(generator);
+                            dreadnaut_batch.push((req_id, DreadnautJob::Orbit(canonizer)));
                         }
                     }
                     self.dreadnaut_data.enqueue_batch(dreadnaut_batch);
@@ -1099,10 +1096,12 @@ impl eframe::App for PuzzleApp {
         self.gap_manager.process_responses();
 
         // -- Enqueue dreadnaut results to GAP trickle queue for current geometry --
-        for (req_id, dreadnaut_res) in self.dreadnaut_data.completed_jobs.drain(..) {
+        for (req_id, dreadnaut_job) in self.dreadnaut_data.completed_jobs.drain(..) {
             if let Some(&(oi, geom_idx)) = self.pending_dreadnaut_requests.get(&req_id)
                 && geom_idx == self.geometry_index
+                && let DreadnautJob::Orbit(canonizer) = dreadnaut_job
             {
+                let dreadnaut_res = canonizer.get_hash();
                 self.orbit_dreadnaut.insert(oi, dreadnaut_res.clone());
                 self.pending_dreadnaut_requests.remove(&req_id);
 

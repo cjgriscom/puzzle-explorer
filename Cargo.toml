@@ -23,7 +23,8 @@ repository = "https://github.com/cjgriscom/puzzle-explorer/"
 authors = ["Chandler Griscom"]
 
 [workspace.dependencies]
-glam = "0.32.0"
+glam = "0.32"
+blake3 = "1.8"
 puzzle-explorer-math = { path = "puzzle-explorer-math" }
 
 [lib]
