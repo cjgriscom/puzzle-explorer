@@ -201,7 +201,7 @@ pub fn invert_axis_angle(axis_angle_rad: f64, epsilon: f64) -> Vec<(u32, u32, u3
 #[test]
 #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
 fn test_invert_axis_angle() {
-    let axis_angle_rad = 37.01656993f64.to_radians();
+    let axis_angle_rad = 63.356f64.to_radians();
     let epsilon = 1e-2;
     let result = invert_axis_angle(axis_angle_rad, epsilon);
     println!("result: {:?}", result);
@@ -317,6 +317,99 @@ pub fn compute_arcs(
         step_start = before;
     }
     (circles, disp_arcs)
+}
+
+/// Given two existing axis unit vectors A and B, plus two dihedral angles
+/// (B-to-C and C-to-A), solve for the third axis C.
+///
+/// Returns the two mirror solutions (c_positive, c_negative) sitting on
+/// opposite sides of the A-B great-circle plane.
+pub fn derive_third_axis(
+    a_vec: DVec3,
+    b_vec: DVec3,
+    angle_bc: f64,
+    angle_ca: f64,
+) -> Result<(DVec3, DVec3), &'static str> {
+    let a = a_vec.normalize();
+    let b = b_vec.normalize();
+
+    let cos_ab = a.dot(b);
+    let cross_ab = a.cross(b);
+    let sin_ab = cross_ab.length();
+
+    if sin_ab < 1e-10 {
+        return Err("A and B axes are parallel");
+    }
+
+    let e1 = a;
+    let e2 = (b - cos_ab * a) / sin_ab;
+    let e3 = cross_ab / sin_ab;
+
+    let x = angle_ca.cos();
+    let y = (angle_bc.cos() - x * cos_ab) / sin_ab;
+    let z_sq = 1.0 - x * x - y * y;
+
+    if z_sq < -1e-9 {
+        return Err("No solution: angle constraints are geometrically inconsistent");
+    }
+
+    let z = z_sq.max(0.0).sqrt();
+
+    let c_pos = (x * e1 + y * e2 + z * e3).normalize();
+    let c_neg = (x * e1 + y * e2 - z * e3).normalize();
+
+    Ok((c_pos, c_neg))
+}
+
+#[test]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
+fn test_derive_third_axis() {
+    let a_vec = DVec3::new(1.0, 0.0, 0.0);
+    let perp = DVec3::new(0.0, 1.0, 0.0);
+
+    let angle_ab = derive_axis_angle(3, 5, 2, 5).unwrap();
+    let b_vec = rotate_v(a_vec, perp, angle_ab).normalize();
+
+    let angle_bc = derive_axis_angle(5, 5, 1, 3).unwrap();
+    let angle_ca = derive_axis_angle(5, 3, 1, 2).unwrap();
+
+    println!("A: {:?}", a_vec);
+    println!("B: {:?}", b_vec);
+    println!("Angle A-B: {:.4}°", angle_ab.to_degrees());
+    println!("Angle B-C: {:.4}°", angle_bc.to_degrees());
+    println!("Angle C-A: {:.4}°", angle_ca.to_degrees());
+
+    let (c1, c2) =
+        derive_third_axis(a_vec, b_vec, angle_bc, angle_ca).expect("Failed to derive third axis");
+
+    println!("C (solution +): {:?}", c1);
+    println!("C (solution -): {:?}", c2);
+
+    let verify = |label: &str, c: DVec3| {
+        let actual_bc = b_vec.dot(c).clamp(-1.0, 1.0).acos();
+        let actual_ca = c.dot(a_vec).clamp(-1.0, 1.0).acos();
+        println!(
+            "  {} => B-C: {:.4}° (expect {:.4}°), C-A: {:.4}° (expect {:.4}°)",
+            label,
+            actual_bc.to_degrees(),
+            angle_bc.to_degrees(),
+            actual_ca.to_degrees(),
+            angle_ca.to_degrees()
+        );
+        assert!(
+            (actual_bc - angle_bc).abs() < 1e-10,
+            "B-C mismatch for {}",
+            label
+        );
+        assert!(
+            (actual_ca - angle_ca).abs() < 1e-10,
+            "C-A mismatch for {}",
+            label
+        );
+    };
+
+    verify("C+", c1);
+    verify("C-", c2);
 }
 
 pub fn merge_arcs(arcs: &[Arc]) -> Vec<Arc> {

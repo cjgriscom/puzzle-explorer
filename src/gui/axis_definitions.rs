@@ -5,7 +5,8 @@ use crate::app::PuzzleApp;
 use crate::color::hex_to_color32;
 use crate::gui::{
     AXIS_ANGLE_DECIMALS, AXIS_ANGLE_SPEED, AXIS_DEFINITIONS_POS, AXIS_DEFINITIONS_WIDTH,
-    EULER_DECIMALS, EULER_SPEED, MAX_N, MIN_N, axis_combo_box,
+    EULER_DECIMALS, EULER_SPEED, MAX_N, MAX_P, MAX_Q, MIN_N, MIN_P, MIN_Q, N_SPEED, P_Q_SPEED,
+    axis_combo_box,
 };
 use crate::types::{AxisDefinition, DerivedAxis, PuzzleParams};
 
@@ -17,6 +18,7 @@ impl DerivedAxis {
         "Cross Product",
         "Average",
         "Cosine Rule",
+        "Third Axis",
         "Circular Pattern",
     ];
 }
@@ -483,7 +485,7 @@ pub fn build_axis_definitions_window(app: &mut PuzzleApp, ctx: &egui::Context) {
                                         .add(
                                             egui::DragValue::new(n_a)
                                                 .range(MIN_N..=MAX_N)
-                                                .speed(0.05),
+                                                .speed(N_SPEED),
                                         )
                                         .changed()
                                     {
@@ -494,7 +496,7 @@ pub fn build_axis_definitions_window(app: &mut PuzzleApp, ctx: &egui::Context) {
                                         .add(
                                             egui::DragValue::new(n_b)
                                                 .range(MIN_N..=MAX_N)
-                                                .speed(0.05),
+                                                .speed(N_SPEED),
                                         )
                                         .changed()
                                     {
@@ -503,14 +505,22 @@ pub fn build_axis_definitions_window(app: &mut PuzzleApp, ctx: &egui::Context) {
                                     if manual_axis_angle.is_none() {
                                         ui.label("p:");
                                         if ui
-                                            .add(egui::DragValue::new(p).range(1..=20).speed(0.02))
+                                            .add(
+                                                egui::DragValue::new(p)
+                                                    .range(MIN_P..=MAX_P)
+                                                    .speed(P_Q_SPEED),
+                                            )
                                             .changed()
                                         {
                                             changed = true;
                                         }
                                         ui.label("q:");
                                         if ui
-                                            .add(egui::DragValue::new(q).range(2..=30).speed(0.02))
+                                            .add(
+                                                egui::DragValue::new(q)
+                                                    .range(MIN_Q..=MAX_Q)
+                                                    .speed(P_Q_SPEED),
+                                            )
                                             .changed()
                                         {
                                             changed = true;
@@ -537,6 +547,128 @@ pub fn build_axis_definitions_window(app: &mut PuzzleApp, ctx: &egui::Context) {
                                         changed = true;
                                     }
                                 });
+                            }
+                            DerivedAxis::ThirdAxis {
+                                a_axis,
+                                b_axis,
+                                n_a,
+                                n_b,
+                                n_c,
+                                p_bc,
+                                q_bc,
+                                p_ca,
+                                q_ca,
+                                manual_angle_bc_deg,
+                                manual_angle_ca_deg,
+                                mirror,
+                            } => {
+                                ui.horizontal(|ui| {
+                                    ui.label("A Axis:");
+                                    if axis_combo_box(
+                                        ui,
+                                        &format!("third_a_{}", name),
+                                        a_axis,
+                                        &available,
+                                    ) {
+                                        changed = true;
+                                    }
+                                    ui.label("B Axis:");
+                                    if axis_combo_box(
+                                        ui,
+                                        &format!("third_b_{}", name),
+                                        b_axis,
+                                        &available,
+                                    ) {
+                                        changed = true;
+                                    }
+                                });
+
+                                let mut local_n_a = *n_a;
+                                ui.horizontal(|ui| {
+                                    for (label, n) in
+                                        [("nA:", &mut local_n_a), ("nB:", n_b), ("nC:", n_c)]
+                                    {
+                                        ui.label(label);
+                                        if ui
+                                            .add(
+                                                egui::DragValue::new(n)
+                                                    .range(MIN_N..=MAX_N)
+                                                    .speed(N_SPEED),
+                                            )
+                                            .changed()
+                                        {
+                                            changed = true;
+                                        }
+                                    }
+                                    if ui.checkbox(mirror, "Mirror").changed() {
+                                        changed = true;
+                                    }
+                                });
+                                *n_a = local_n_a;
+
+                                for (label, p, q, n_other, manual_angle_deg_src) in [
+                                    ("B -> C", p_bc, q_bc, *n_b, manual_angle_bc_deg),
+                                    ("C -> A", p_ca, q_ca, *n_a, manual_angle_ca_deg),
+                                ] {
+                                    ui.horizontal(|ui| {
+                                        ui.label(label);
+                                        ui.add_enabled_ui(manual_angle_deg_src.is_none(), |ui| {
+                                            ui.label("p:");
+                                            if ui
+                                                .add(
+                                                    egui::DragValue::new(p)
+                                                        .range(MIN_P..=MAX_P)
+                                                        .speed(P_Q_SPEED),
+                                                )
+                                                .changed()
+                                            {
+                                                changed = true;
+                                            }
+                                            ui.label("q:");
+                                            if ui
+                                                .add(
+                                                    egui::DragValue::new(q)
+                                                        .range(MIN_Q..=MAX_Q)
+                                                        .speed(P_Q_SPEED),
+                                                )
+                                                .changed()
+                                            {
+                                                changed = true;
+                                            }
+                                        });
+                                        if let Some(manual_deg) = manual_angle_deg_src {
+                                            if ui
+                                                .add(
+                                                    egui::DragValue::new(manual_deg)
+                                                        .range(0.0..=180.0)
+                                                        .speed(AXIS_ANGLE_SPEED)
+                                                        .fixed_decimals(AXIS_ANGLE_DECIMALS)
+                                                        .suffix("°"),
+                                                )
+                                                .changed()
+                                            {
+                                                changed = true;
+                                            }
+                                        } else if let Some(ang) =
+                                            derive_axis_angle(*n_c, n_other, *p, *q)
+                                        {
+                                            ui.label(format!("= {:.4}°", ang.to_degrees()));
+                                        }
+                                        ui.separator();
+                                        let mut is_manual_ca = manual_angle_deg_src.is_some();
+                                        if ui.add(crate::gui::toggle(&mut is_manual_ca)).changed() {
+                                            if is_manual_ca {
+                                                let ang = derive_axis_angle(*n_c, n_other, *p, *q)
+                                                    .unwrap_or(0.0);
+                                                *manual_angle_deg_src = Some(ang.to_degrees());
+                                            } else {
+                                                *manual_angle_deg_src = None;
+                                            }
+                                            changed = true;
+                                        }
+                                        ui.label("Manual");
+                                    });
+                                }
                             }
                             DerivedAxis::CircularPattern {
                                 pattern_axis,

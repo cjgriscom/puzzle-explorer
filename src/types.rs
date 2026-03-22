@@ -211,6 +211,21 @@ pub enum DerivedAxis {
         perpendicular_axis: String, // axis A is copied and rotated around this axis by the derived angle
         manual_axis_angle_deg: Option<f64>,
     },
+    // Derive a third axis C from two existing axes A and B using two cosine rules
+    ThirdAxis {
+        a_axis: String,
+        b_axis: String,
+        n_a: u32,
+        n_b: u32,
+        n_c: u32,
+        p_bc: u32,
+        q_bc: u32,
+        p_ca: u32,
+        q_ca: u32,
+        manual_angle_bc_deg: Option<f64>,
+        manual_angle_ca_deg: Option<f64>,
+        mirror: bool,
+    },
     // Copy target_axis n times (2+) around pattern_axis along the angle range
     CircularPattern {
         pattern_axis: String,

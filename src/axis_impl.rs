@@ -2,7 +2,7 @@ use crate::types::{AxisDefinition, AxisDefinitions, DerivedAxis};
 use std::collections::{HashMap, HashSet, VecDeque};
 
 use glam::{DAffine3, DVec3};
-use puzzle_explorer_math::geometry::derive_axis_angle;
+use puzzle_explorer_math::geometry::{derive_axis_angle, derive_third_axis};
 
 impl DerivedAxis {
     pub fn resultant_vectors(
@@ -81,6 +81,36 @@ impl DerivedAxis {
                 let b_vec = rotation.transform_vector3(a_vec).normalize();
                 Ok(vec![a_vec, b_vec])
             }
+            DerivedAxis::ThirdAxis {
+                a_axis,
+                b_axis,
+                n_a,
+                n_b,
+                n_c,
+                p_bc,
+                q_bc,
+                p_ca,
+                q_ca,
+                manual_angle_bc_deg,
+                manual_angle_ca_deg,
+                mirror,
+            } => {
+                let a_vec = resolve_norm_reference(axis_map, a_axis)?;
+                let b_vec = resolve_norm_reference(axis_map, b_axis)?;
+                let angle_bc = match manual_angle_bc_deg {
+                    Some(deg) => deg.to_radians(),
+                    None => derive_axis_angle(*n_b, *n_c, *p_bc, *q_bc)
+                        .ok_or_else(|| "Failed to derive B-C angle".to_string())?,
+                };
+                let angle_ca = match manual_angle_ca_deg {
+                    Some(deg) => deg.to_radians(),
+                    None => derive_axis_angle(*n_c, *n_a, *p_ca, *q_ca)
+                        .ok_or_else(|| "Failed to derive C-A angle".to_string())?,
+                };
+                let (c_pos, c_neg) = derive_third_axis(a_vec, b_vec, angle_bc, angle_ca)
+                    .map_err(|e| e.to_string())?;
+                Ok(vec![if *mirror { c_neg } else { c_pos }])
+            }
             DerivedAxis::CircularPattern {
                 pattern_axis,
                 target_axis,
@@ -127,6 +157,9 @@ impl DerivedAxis {
             } => {
                 vec![a_axis.clone(), perpendicular_axis.clone()]
             }
+            DerivedAxis::ThirdAxis { a_axis, b_axis, .. } => {
+                vec![a_axis.clone(), b_axis.clone()]
+            }
             DerivedAxis::CircularPattern {
                 pattern_axis,
                 target_axis,
@@ -155,7 +188,8 @@ impl DerivedAxis {
             DerivedAxis::CrossProduct { .. } => 3,
             DerivedAxis::Average { .. } => 4,
             DerivedAxis::CosineRule { .. } => 5,
-            DerivedAxis::CircularPattern { .. } => 6,
+            DerivedAxis::ThirdAxis { .. } => 6,
+            DerivedAxis::CircularPattern { .. } => 7,
         }
     }
 
@@ -190,7 +224,21 @@ impl DerivedAxis {
                 perpendicular_axis: "Y".to_string(),
                 manual_axis_angle_deg: None,
             },
-            6 => DerivedAxis::CircularPattern {
+            6 => DerivedAxis::ThirdAxis {
+                a_axis: "X".to_string(),
+                b_axis: "Y".to_string(),
+                n_a: 3,
+                n_b: 3,
+                n_c: 3,
+                p_bc: 1,
+                q_bc: 3,
+                p_ca: 1,
+                q_ca: 3,
+                manual_angle_bc_deg: None,
+                manual_angle_ca_deg: None,
+                mirror: false,
+            },
+            7 => DerivedAxis::CircularPattern {
                 pattern_axis: "Z".to_string(),
                 target_axis: "X".to_string(),
                 n: 3,
@@ -237,6 +285,14 @@ impl DerivedAxis {
                 }
                 if perpendicular_axis == old_name {
                     *perpendicular_axis = new_name.to_string();
+                }
+            }
+            DerivedAxis::ThirdAxis { a_axis, b_axis, .. } => {
+                if a_axis == old_name {
+                    *a_axis = new_name.to_string();
+                }
+                if b_axis == old_name {
+                    *b_axis = new_name.to_string();
                 }
             }
             DerivedAxis::CircularPattern {
@@ -392,9 +448,12 @@ impl AxisDefinitions {
         names
     }
 
-    /// For a given axis name referencing a CosineRule definition,
-    /// return the matching n value (n_a for _A, n_b for _B)
+    /// For a given axis name referencing a CosineRule or ThirdAxis definition,
+    /// return the matching n value (n_a for _A, n_b for _B, n_c for ThirdAxis)
     pub fn get_cosine_rule_n_for_axis(&self, axis_name: &str) -> Option<u32> {
+        if let Some(DerivedAxis::ThirdAxis { n_c, .. }) = self.get_definition(axis_name) {
+            return Some(*n_c);
+        }
         if let Some(pos) = axis_name.rfind('_') {
             let base = &axis_name[..pos];
             let suffix = &axis_name[pos + 1..];
