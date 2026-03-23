@@ -28,7 +28,8 @@ use crate::three::{
     SpriteMaterial, Vector3, WebGLRenderer,
 };
 use crate::types::{
-    AxisDefinitions, MeasureAxisAngleWindowState, OrbitAnalysisState, PuzzleParams, WindowState,
+    AxisDefinitions, InvertAxisAngleWindowState, MeasureAxisAngleWindowState, OrbitAnalysisState,
+    PuzzleParams, WindowState,
 };
 use crate::worker::{GeometryResult, OrbitResult, PolyLine, WorkerMessage, WorkerResponse};
 
@@ -555,6 +556,7 @@ pub struct PuzzleApp {
     pub(crate) orbit_state: OrbitAnalysisState,
     pub(crate) axis_defs: AxisDefinitions,
     pub(crate) measure_axis_angle_state: MeasureAxisAngleWindowState,
+    pub(crate) invert_axis_angle_state: InvertAxisAngleWindowState,
 
     // Dreadnaut worker
     dreadnaut_data: DreadnautManager,
@@ -641,6 +643,7 @@ impl PuzzleApp {
             orbit_state: OrbitAnalysisState::default(),
             axis_defs: AxisDefinitions::default(),
             measure_axis_angle_state: MeasureAxisAngleWindowState::default(),
+            invert_axis_angle_state: InvertAxisAngleWindowState::default(),
 
             dreadnaut_data: DreadnautManager::new(move || egui_ctx_0.request_repaint()),
             gap_manager: GapManager::new(),

@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 pub struct WindowState {
     pub show_controls: bool,
     pub show_measure_axis_angle: bool,
+    pub show_invert_axis_angle: bool,
     pub show_gap_console: bool,
 }
 
@@ -16,6 +17,7 @@ impl Default for WindowState {
         Self {
             show_controls: false,
             show_measure_axis_angle: false,
+            show_invert_axis_angle: false,
             show_gap_console: true,
         }
     }
@@ -137,6 +139,26 @@ impl Default for OrbitAnalysisState {
 pub struct MeasureAxisAngleWindowState {
     pub axis_a: String,
     pub axis_b: String,
+}
+
+/// Invert axis angle window state
+#[derive(Clone, Debug, PartialEq)]
+pub struct InvertAxisAngleWindowState {
+    pub angle_deg_input: f64,
+    pub epsilon_decimal_places: f64,
+    pub output_lines: Vec<String>,
+    pub error_message: Option<String>,
+}
+
+impl Default for InvertAxisAngleWindowState {
+    fn default() -> Self {
+        Self {
+            angle_deg_input: 138.1897f64,
+            epsilon_decimal_places: 1.0,
+            output_lines: Vec::new(),
+            error_message: None,
+        }
+    }
 }
 
 /// Axis definitions window state

@@ -3,6 +3,7 @@ use crate::PuzzleApp;
 pub mod axis_definitions;
 pub mod controls;
 pub mod gap_console;
+pub mod invert_axis_angle;
 pub mod measure_axis_angle;
 pub mod menu;
 pub mod orbit_analysis;
@@ -15,12 +16,14 @@ pub const ORBIT_ANALYSIS_POS: [f32; 2] = [20.0, 450.0];
 pub const GAP_CONSOLE_POS: [f32; 2] = [440.0, 40.0];
 pub const CONTROLS_POS: [f32; 2] = [440.0, 90.0];
 pub const MEASURE_AXIS_ANGLE_POS: [f32; 2] = CONTROLS_POS;
+pub const INVERT_AXIS_ANGLE_POS: [f32; 2] = CONTROLS_POS;
 
 pub const AXIS_DEFINITIONS_WIDTH: f32 = 380.0;
 pub const PUZZLE_PARAMS_WIDTH: f32 = 380.0;
 pub const ORBIT_ANALYSIS_WIDTH: f32 = 380.0;
 pub const GAP_CONSOLE_WIDTH: f32 = 500.0;
 pub const MEASURE_AXIS_ANGLE_WIDTH: f32 = 220.0;
+pub const INVERT_AXIS_ANGLE_WIDTH: f32 = 420.0;
 
 pub const MAX_PUZZLE_AXES: usize = 26;
 pub const MIN_N: u32 = 2;
@@ -47,6 +50,7 @@ pub fn build_windows(app: &mut PuzzleApp, ctx: &egui::Context) {
     menu::build_menu_bar(app, ctx);
     controls::build_controls_window(app, ctx);
     measure_axis_angle::build_measure_axis_angle_window(app, ctx);
+    invert_axis_angle::build_invert_axis_angle_window(app, ctx);
     gap_console::build_gap_console_window(app, ctx);
 
     orbit_analysis::build_orbit_analysis_window(app, ctx);
