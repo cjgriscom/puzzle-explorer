@@ -15,7 +15,7 @@ pub fn build_puzzle_params_window(app: &mut PuzzleApp, ctx: &egui::Context) {
         .default_width(PUZZLE_PARAMS_WIDTH)
         .show(ctx, |ui| {
             // Bigger slider than default
-            ui.spacing_mut().slider_width = 270.0;
+            ui.spacing_mut().slider_width = 250.0;
 
             let mut changed = false;
 

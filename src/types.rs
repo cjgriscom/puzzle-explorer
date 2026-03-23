@@ -147,7 +147,6 @@ pub struct InvertAxisAngleWindowState {
     pub angle_deg_input: f64,
     pub epsilon_decimal_places: f64,
     pub output_lines: Vec<String>,
-    pub error_message: Option<String>,
 }
 
 impl Default for InvertAxisAngleWindowState {
@@ -156,7 +155,6 @@ impl Default for InvertAxisAngleWindowState {
             angle_deg_input: 138.1897f64,
             epsilon_decimal_places: 1.0,
             output_lines: Vec::new(),
-            error_message: None,
         }
     }
 }

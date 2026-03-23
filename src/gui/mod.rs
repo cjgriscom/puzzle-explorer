@@ -18,12 +18,12 @@ pub const CONTROLS_POS: [f32; 2] = [440.0, 90.0];
 pub const MEASURE_AXIS_ANGLE_POS: [f32; 2] = CONTROLS_POS;
 pub const INVERT_AXIS_ANGLE_POS: [f32; 2] = CONTROLS_POS;
 
-pub const AXIS_DEFINITIONS_WIDTH: f32 = 380.0;
-pub const PUZZLE_PARAMS_WIDTH: f32 = 380.0;
-pub const ORBIT_ANALYSIS_WIDTH: f32 = 380.0;
+pub const AXIS_DEFINITIONS_WIDTH: f32 = 370.0;
+pub const PUZZLE_PARAMS_WIDTH: f32 = 370.0;
+pub const ORBIT_ANALYSIS_WIDTH: f32 = 370.0;
 pub const GAP_CONSOLE_WIDTH: f32 = 500.0;
 pub const MEASURE_AXIS_ANGLE_WIDTH: f32 = 220.0;
-pub const INVERT_AXIS_ANGLE_WIDTH: f32 = 420.0;
+pub const INVERT_AXIS_ANGLE_WIDTH: f32 = 370.0;
 
 pub const MAX_PUZZLE_AXES: usize = 26;
 pub const MIN_N: u32 = 2;
