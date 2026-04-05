@@ -551,28 +551,21 @@ checksum = "d8b14ccef22fc6f5a8f4d7d768562a182c04ce9a3b3157b91390b52ddfdf1a76"
 [[package]]
 name = "ecolor"
 version = "0.34.1"
+source = "git+https://github.com/cjgriscom/egui?branch=puzzle-explorer#28237e1da47f840810166f0503439873ea92de3e"
 dependencies = [
  "bytemuck",
- "emath 0.34.1",
-]
-
-[[package]]
-name = "ecolor"
-version = "0.34.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "137c0ce4ce4152ff7e223a7ce22ee1057cdff61fce0a45c32459c3ccec64868d"
-dependencies = [
- "emath 0.34.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "emath",
 ]
 
 [[package]]
 name = "eframe"
 version = "0.34.1"
+source = "git+https://github.com/cjgriscom/egui?branch=puzzle-explorer#28237e1da47f840810166f0503439873ea92de3e"
 dependencies = [
  "ahash",
  "bytemuck",
  "document-features",
- "egui 0.34.1",
+ "egui",
  "egui-wgpu",
  "egui-winit",
  "egui_glow",
@@ -601,30 +594,13 @@ dependencies = [
 [[package]]
 name = "egui"
 version = "0.34.1"
+source = "git+https://github.com/cjgriscom/egui?branch=puzzle-explorer#28237e1da47f840810166f0503439873ea92de3e"
 dependencies = [
  "accesskit",
  "ahash",
  "bitflags 2.11.0",
- "emath 0.34.1",
- "epaint 0.34.1",
- "log",
- "nohash-hasher",
- "profiling",
- "smallvec",
- "unicode-segmentation",
-]
-
-[[package]]
-name = "egui"
-version = "0.34.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f34aaf627da598dfadd64b0fee6101d22e9c451d1e5348157312720b7f459f0f"
-dependencies = [
- "accesskit",
- "ahash",
- "bitflags 2.11.0",
- "emath 0.34.1 (registry+https://github.com/rust-lang/crates.io-index)",
- "epaint 0.34.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "emath",
+ "epaint",
  "log",
  "nohash-hasher",
  "profiling",
@@ -635,12 +611,13 @@ dependencies = [
 [[package]]
 name = "egui-wgpu"
 version = "0.34.1"
+source = "git+https://github.com/cjgriscom/egui?branch=puzzle-explorer#28237e1da47f840810166f0503439873ea92de3e"
 dependencies = [
  "ahash",
  "bytemuck",
  "document-features",
- "egui 0.34.1",
- "epaint 0.34.1",
+ "egui",
+ "epaint",
  "log",
  "profiling",
  "thiserror 2.0.18",
@@ -653,10 +630,11 @@ dependencies = [
 [[package]]
 name = "egui-winit"
 version = "0.34.1"
+source = "git+https://github.com/cjgriscom/egui?branch=puzzle-explorer#28237e1da47f840810166f0503439873ea92de3e"
 dependencies = [
  "arboard",
  "bytemuck",
- "egui 0.34.1",
+ "egui",
  "log",
  "objc2 0.6.4",
  "objc2-foundation 0.3.2",
@@ -672,9 +650,10 @@ dependencies = [
 [[package]]
 name = "egui_glow"
 version = "0.34.1"
+source = "git+https://github.com/cjgriscom/egui?branch=puzzle-explorer#28237e1da47f840810166f0503439873ea92de3e"
 dependencies = [
  "bytemuck",
- "egui 0.34.1",
+ "egui",
  "glow",
  "log",
  "memoffset",
@@ -687,44 +666,20 @@ dependencies = [
 [[package]]
 name = "emath"
 version = "0.34.1"
+source = "git+https://github.com/cjgriscom/egui?branch=puzzle-explorer#28237e1da47f840810166f0503439873ea92de3e"
 dependencies = [
  "bytemuck",
 ]
 
 [[package]]
-name = "emath"
-version = "0.34.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0a05cd8bdf3b598488c627ca97c7fe8909448ffa26278dd3c7e535cdb554d721"
-
-[[package]]
 name = "epaint"
 version = "0.34.1"
+source = "git+https://github.com/cjgriscom/egui?branch=puzzle-explorer#28237e1da47f840810166f0503439873ea92de3e"
 dependencies = [
  "ahash",
  "bytemuck",
- "ecolor 0.34.1",
- "emath 0.34.1",
- "font-types",
- "log",
- "nohash-hasher",
- "parking_lot",
- "profiling",
- "self_cell",
- "skrifa",
- "smallvec",
- "vello_cpu",
-]
-
-[[package]]
-name = "epaint"
-version = "0.34.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "04f3017dd67f147a697ee0c8484fb568fd9553e2a0c114be5020dbbc11962841"
-dependencies = [
- "ahash",
- "ecolor 0.34.1 (registry+https://github.com/rust-lang/crates.io-index)",
- "emath 0.34.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "ecolor",
+ "emath",
  "font-types",
  "log",
  "nohash-hasher",
@@ -829,9 +784,9 @@ checksum = "77ce24cb58228fbb8aa041425bb1050850ac19177686ea6e0f41a70416f56fdb"
 
 [[package]]
 name = "font-types"
-version = "0.11.1"
+version = "0.11.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "73829a7b5c91198af28a99159b7ae4afbb252fb906159ff7f189f3a2ceaa3df2"
+checksum = "2d9237c6d82152100c691fb77ea18037b402bcc7257d2c876a4ffac81bc22a1c"
 dependencies = [
  "bytemuck",
 ]
@@ -2014,7 +1969,7 @@ dependencies = [
  "console_error_panic_hook",
  "console_log",
  "eframe",
- "egui 0.34.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "egui",
  "glam",
  "js-sys",
  "log",
