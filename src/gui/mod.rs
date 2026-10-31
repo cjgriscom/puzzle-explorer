@@ -36,6 +36,8 @@ pub const MAX_Q: u32 = 30;
 pub const P_Q_SPEED: f64 = 0.02;
 pub const MIN_COLAT: f32 = 10.0;
 pub const MAX_COLAT: f32 = 170.0;
+/// Slightly under a full-width slider so the merge-up button fits beside the value.
+pub const COLAT_SLIDER_WIDTH: f32 = 210.0;
 pub const COLAT_STEP: f64 = 0.1;
 pub const COLAT_DECIMALS: usize = 1;
 pub const COLAT_SPEED: f64 = 0.05;

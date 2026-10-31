@@ -23,14 +23,138 @@ impl Default for WindowState {
     }
 }
 
+/// Colatitude of a cut, or a link to the axis above.
+///
+/// Serialized as a number of degrees, or the string "MergeUp".
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum ColatitudeDeg {
+    Degrees(f32),
+    MergeUp,
+}
+
+impl ColatitudeDeg {
+    pub const DEFAULT_DEGREES: f32 = 89.0;
+
+    pub fn degrees(self) -> Option<f32> {
+        match self {
+            ColatitudeDeg::Degrees(v) => Some(v),
+            ColatitudeDeg::MergeUp => None,
+        }
+    }
+
+    pub fn is_merge_up(self) -> bool {
+        matches!(self, ColatitudeDeg::MergeUp)
+    }
+}
+
+impl Serialize for ColatitudeDeg {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        match *self {
+            ColatitudeDeg::Degrees(v) => serializer.serialize_f32(v),
+            ColatitudeDeg::MergeUp => serializer.serialize_str("MergeUp"),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for ColatitudeDeg {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum Raw {
+            Degrees(f32),
+            Tag(String),
+        }
+        match Raw::deserialize(deserializer)? {
+            Raw::Degrees(v) => Ok(ColatitudeDeg::Degrees(v)),
+            Raw::Tag(s) if s == "MergeUp" => Ok(ColatitudeDeg::MergeUp),
+            Raw::Tag(s) => Err(serde::de::Error::custom(format!(
+                "expected a number or \"MergeUp\", got {s:?}"
+            ))),
+        }
+    }
+}
+
 /// Axis entry in puzzle params
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct AxisEntry {
     pub axis_name: String, // references an axis definition (or X/Y/Z)
     pub n: u32,
-    pub colatitude_deg: f32,
+    pub colatitude_deg: ColatitudeDeg,
     pub n_match: bool, // when true, n syncs from CosineRule definition
     pub enabled: bool, // when false, axis is skipped during geometry build
+}
+
+impl AxisEntry {
+    /// Concrete colatitude, walking MergeUp links toward lower indices.
+    ///
+    /// A MergeUp at index 0 is invalid and resolves to [`ColatitudeDeg::DEFAULT_DEGREES`].
+    pub fn resolved_colatitude_deg(axes: &[Self], idx: usize) -> f32 {
+        let mut i = idx;
+        loop {
+            match axes.get(i).map(|a| a.colatitude_deg) {
+                Some(ColatitudeDeg::Degrees(v)) => return v,
+                Some(ColatitudeDeg::MergeUp) if i > 0 => i -= 1,
+                _ => return ColatitudeDeg::DEFAULT_DEGREES,
+            }
+        }
+    }
+
+    /// Replace a MergeUp entry with the concrete degrees it currently resolves to.
+    pub fn materialize_colatitude(axes: &mut [Self], idx: usize) {
+        if idx >= axes.len() || !axes[idx].colatitude_deg.is_merge_up() {
+            return;
+        }
+        let degrees = Self::resolved_colatitude_deg(axes, idx);
+        axes[idx].colatitude_deg = ColatitudeDeg::Degrees(degrees);
+    }
+
+    /// Copy the first axis's concrete colatitude onto every non-MergeUp entry.
+    pub fn unify_concrete_colatitudes(axes: &mut [Self]) {
+        let Some(first) = axes.first().and_then(|a| a.colatitude_deg.degrees()) else {
+            return;
+        };
+        let unified = ColatitudeDeg::Degrees(first);
+        for entry in axes.iter_mut() {
+            if !entry.colatitude_deg.is_merge_up() {
+                entry.colatitude_deg = unified;
+            }
+        }
+    }
+
+    /// Swap `idx` with the axis above it.
+    ///
+    /// When a MergeUp axis swaps with the top axis, their colatitudes are exchanged.
+    /// The new top keeps the concrete degrees, and the axis that moved down becomes MergeUp.
+    pub fn move_up(axes: &mut [Self], idx: usize) {
+        if idx == 0 || idx >= axes.len() {
+            return;
+        }
+        let moving_is_merge_up = axes[idx].colatitude_deg.is_merge_up();
+        axes.swap(idx - 1, idx);
+        if idx == 1 && moving_is_merge_up {
+            let moved_down = axes[idx].colatitude_deg;
+            axes[idx].colatitude_deg = axes[idx - 1].colatitude_deg;
+            axes[idx - 1].colatitude_deg = moved_down;
+        }
+    }
+
+    /// Remove `idx`.
+    ///
+    /// If that axis is the concrete head of a MergeUp chain, the next axis keeps
+    /// that concrete colatitude instead of linking to whatever is now above it.
+    pub fn remove_at(axes: &mut Vec<Self>, idx: usize) {
+        if idx >= axes.len() {
+            return;
+        }
+        let next = idx + 1;
+        if next < axes.len()
+            && !axes[idx].colatitude_deg.is_merge_up()
+            && axes[next].colatitude_deg.is_merge_up()
+        {
+            Self::materialize_colatitude(axes, next);
+        }
+        axes.remove(idx);
+    }
 }
 
 impl Default for AxisEntry {
@@ -38,7 +162,7 @@ impl Default for AxisEntry {
         Self {
             axis_name: String::new(),
             n: 3,
-            colatitude_deg: 89.0,
+            colatitude_deg: ColatitudeDeg::Degrees(ColatitudeDeg::DEFAULT_DEGREES),
             n_match: false,
             enabled: true,
         }
@@ -61,6 +185,7 @@ impl PuzzleParams {
         self.max_iterations = imported.max_iterations;
         self.lock_cuts = imported.lock_cuts;
         self.axes = imported.axes.clone();
+        AxisEntry::materialize_colatitude(&mut self.axes, 0);
     }
 }
 
@@ -260,4 +385,182 @@ pub enum DerivedAxis {
         plane_axis_1: String,
         plane_axis_2: String,
     },
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn entry(colatitude_deg: ColatitudeDeg) -> AxisEntry {
+        AxisEntry {
+            colatitude_deg,
+            ..AxisEntry::default()
+        }
+    }
+
+    #[test]
+    fn colatitude_serializes_as_number_or_merge_up() {
+        let degrees = ColatitudeDeg::Degrees(90.0);
+        let degrees_yaml = serde_yaml_ng::to_string(&degrees).unwrap();
+        assert!(degrees_yaml.contains("90"));
+        assert!(!degrees_yaml.contains("Degrees"));
+        let degrees_back: ColatitudeDeg = serde_yaml_ng::from_str(&degrees_yaml).unwrap();
+        assert_eq!(degrees_back, degrees);
+
+        let merge_yaml = serde_yaml_ng::to_string(&ColatitudeDeg::MergeUp).unwrap();
+        assert!(merge_yaml.contains("MergeUp"));
+        let merge_back: ColatitudeDeg = serde_yaml_ng::from_str(&merge_yaml).unwrap();
+        assert_eq!(merge_back, ColatitudeDeg::MergeUp);
+
+        let from_int: ColatitudeDeg = serde_yaml_ng::from_str("90").unwrap();
+        assert_eq!(from_int, ColatitudeDeg::Degrees(90.0));
+    }
+
+    #[test]
+    fn axis_entry_reads_merge_up_string() {
+        let yaml = r#"
+axis_name: A
+n: 3
+colatitude_deg: MergeUp
+n_match: false
+enabled: true
+"#;
+        let entry: AxisEntry = serde_yaml_ng::from_str(yaml).unwrap();
+        assert!(entry.colatitude_deg.is_merge_up());
+
+        let written = serde_yaml_ng::to_string(&entry).unwrap();
+        assert!(written.contains("colatitude_deg: MergeUp"));
+    }
+
+    #[test]
+    fn example_puzzle_colatitudes_still_load() {
+        let yaml = include_str!("examples/Biaxe.yml");
+        let export = crate::puzzle_io::PuzzleExport::from_yaml(yaml).unwrap();
+        assert_eq!(
+            export.params.axes[0].colatitude_deg,
+            ColatitudeDeg::Degrees(90.0)
+        );
+        assert_eq!(
+            export.params.axes[1].colatitude_deg,
+            ColatitudeDeg::Degrees(90.0)
+        );
+    }
+
+    #[test]
+    fn merge_up_chain_resolves_to_topmost_concrete_axis() {
+        let axes = vec![
+            entry(ColatitudeDeg::Degrees(12.5)),
+            entry(ColatitudeDeg::MergeUp),
+            entry(ColatitudeDeg::MergeUp),
+            entry(ColatitudeDeg::Degrees(40.0)),
+            entry(ColatitudeDeg::MergeUp),
+        ];
+        assert_eq!(AxisEntry::resolved_colatitude_deg(&axes, 0), 12.5);
+        assert_eq!(AxisEntry::resolved_colatitude_deg(&axes, 1), 12.5);
+        assert_eq!(AxisEntry::resolved_colatitude_deg(&axes, 2), 12.5);
+        assert_eq!(AxisEntry::resolved_colatitude_deg(&axes, 3), 40.0);
+        assert_eq!(AxisEntry::resolved_colatitude_deg(&axes, 4), 40.0);
+    }
+
+    #[test]
+    fn moving_merge_up_to_top_transfers_the_lock_downward() {
+        let mut axes = vec![
+            AxisEntry {
+                axis_name: "top".into(),
+                colatitude_deg: ColatitudeDeg::Degrees(33.0),
+                ..AxisEntry::default()
+            },
+            AxisEntry {
+                axis_name: "linked".into(),
+                colatitude_deg: ColatitudeDeg::MergeUp,
+                ..AxisEntry::default()
+            },
+            entry(ColatitudeDeg::MergeUp),
+        ];
+        AxisEntry::move_up(&mut axes, 1);
+        assert_eq!(axes[0].axis_name, "linked");
+        assert_eq!(axes[0].colatitude_deg, ColatitudeDeg::Degrees(33.0));
+        assert_eq!(axes[1].axis_name, "top");
+        assert!(axes[1].colatitude_deg.is_merge_up());
+        assert!(axes[2].colatitude_deg.is_merge_up());
+        assert_eq!(AxisEntry::resolved_colatitude_deg(&axes, 1), 33.0);
+        assert_eq!(AxisEntry::resolved_colatitude_deg(&axes, 2), 33.0);
+    }
+
+    #[test]
+    fn removing_top_axis_materializes_the_new_top() {
+        let mut axes = vec![
+            entry(ColatitudeDeg::Degrees(33.0)),
+            entry(ColatitudeDeg::MergeUp),
+            entry(ColatitudeDeg::MergeUp),
+        ];
+        AxisEntry::remove_at(&mut axes, 0);
+        assert_eq!(axes[0].colatitude_deg, ColatitudeDeg::Degrees(33.0));
+        assert!(axes[1].colatitude_deg.is_merge_up());
+        assert_eq!(AxisEntry::resolved_colatitude_deg(&axes, 1), 33.0);
+    }
+
+    #[test]
+    fn deleting_a_chain_head_gives_its_value_to_the_next_axis() {
+        let mut axes = vec![
+            entry(ColatitudeDeg::Degrees(33.0)),
+            entry(ColatitudeDeg::MergeUp),
+            entry(ColatitudeDeg::Degrees(50.0)),
+            entry(ColatitudeDeg::MergeUp),
+            entry(ColatitudeDeg::MergeUp),
+        ];
+        AxisEntry::remove_at(&mut axes, 2);
+        assert_eq!(axes[0].colatitude_deg, ColatitudeDeg::Degrees(33.0));
+        assert!(axes[1].colatitude_deg.is_merge_up());
+        assert_eq!(axes[2].colatitude_deg, ColatitudeDeg::Degrees(50.0));
+        assert!(axes[3].colatitude_deg.is_merge_up());
+        assert_eq!(AxisEntry::resolved_colatitude_deg(&axes, 1), 33.0);
+        assert_eq!(AxisEntry::resolved_colatitude_deg(&axes, 2), 50.0);
+        assert_eq!(AxisEntry::resolved_colatitude_deg(&axes, 3), 50.0);
+    }
+
+    #[test]
+    fn deleting_the_middle_of_a_chain_keeps_the_link() {
+        let mut axes = vec![
+            entry(ColatitudeDeg::Degrees(33.0)),
+            entry(ColatitudeDeg::MergeUp),
+            entry(ColatitudeDeg::MergeUp),
+        ];
+        AxisEntry::remove_at(&mut axes, 1);
+        assert_eq!(axes[0].colatitude_deg, ColatitudeDeg::Degrees(33.0));
+        assert!(axes[1].colatitude_deg.is_merge_up());
+        assert_eq!(AxisEntry::resolved_colatitude_deg(&axes, 1), 33.0);
+    }
+
+    #[test]
+    fn lock_cuts_unifies_concrete_values_and_keeps_merge_up() {
+        let mut axes = vec![
+            entry(ColatitudeDeg::Degrees(10.0)),
+            entry(ColatitudeDeg::Degrees(20.0)),
+            entry(ColatitudeDeg::MergeUp),
+            entry(ColatitudeDeg::Degrees(30.0)),
+        ];
+        AxisEntry::unify_concrete_colatitudes(&mut axes);
+        assert_eq!(axes[0].colatitude_deg, ColatitudeDeg::Degrees(10.0));
+        assert_eq!(axes[1].colatitude_deg, ColatitudeDeg::Degrees(10.0));
+        assert!(axes[2].colatitude_deg.is_merge_up());
+        assert_eq!(axes[3].colatitude_deg, ColatitudeDeg::Degrees(10.0));
+        assert_eq!(AxisEntry::resolved_colatitude_deg(&axes, 2), 10.0);
+    }
+
+    #[test]
+    fn imported_merge_up_on_top_axis_is_replaced() {
+        let mut params = PuzzleParams::default();
+        let mut imported = PuzzleParams::default();
+        imported.axes = vec![
+            entry(ColatitudeDeg::MergeUp),
+            entry(ColatitudeDeg::Degrees(50.0)),
+        ];
+        params.apply_imported(&imported);
+        assert_eq!(
+            params.axes[0].colatitude_deg,
+            ColatitudeDeg::Degrees(ColatitudeDeg::DEFAULT_DEGREES)
+        );
+        assert_eq!(params.axes[1].colatitude_deg, ColatitudeDeg::Degrees(50.0));
+    }
 }

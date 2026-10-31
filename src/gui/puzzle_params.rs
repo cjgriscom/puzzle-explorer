@@ -2,10 +2,10 @@ use egui::Button;
 
 use crate::app::PuzzleApp;
 use crate::gui::{
-    COLAT_DECIMALS, COLAT_SPEED, COLAT_STEP, MAX_COLAT, MAX_N, MAX_PUZZLE_AXES, MIN_COLAT, MIN_N,
-    PUZZLE_PARAMS_POS, PUZZLE_PARAMS_WIDTH,
+    COLAT_DECIMALS, COLAT_SLIDER_WIDTH, COLAT_SPEED, COLAT_STEP, MAX_COLAT, MAX_N, MAX_PUZZLE_AXES,
+    MIN_COLAT, MIN_N, PUZZLE_PARAMS_POS, PUZZLE_PARAMS_WIDTH,
 };
-use crate::types::AxisEntry;
+use crate::types::{AxisEntry, ColatitudeDeg};
 
 pub fn build_puzzle_params_window(app: &mut PuzzleApp, ctx: &egui::Context) {
     let buttons_enabled = app.anim.is_none();
@@ -14,8 +14,8 @@ pub fn build_puzzle_params_window(app: &mut PuzzleApp, ctx: &egui::Context) {
         .default_pos(PUZZLE_PARAMS_POS)
         .default_width(PUZZLE_PARAMS_WIDTH)
         .show(ctx, |ui| {
-            // Bigger slider than default
-            ui.spacing_mut().slider_width = 250.0;
+            // Bigger slider than default, short enough for the merge-up button
+            ui.spacing_mut().slider_width = COLAT_SLIDER_WIDTH;
 
             let mut changed = false;
 
@@ -63,15 +63,11 @@ pub fn build_puzzle_params_window(app: &mut PuzzleApp, ctx: &egui::Context) {
                     .changed()
                     && app.params.lock_cuts
                 {
-                    // Sync all colats to first axis
-                    if let Some(first_colat) = app.params.axes.first().map(|a| a.colatitude_deg) {
-                        for entry in &mut app.params.axes {
-                            entry.colatitude_deg = first_colat;
-                        }
-                    }
+                    // Sync concrete colats to the first axis. MergeUp links stay put.
+                    AxisEntry::unify_concrete_colatitudes(&mut app.params.axes);
                     changed = true;
                 }
-                ui.label("Lock cuts together");
+                ui.label("Lock all cuts together");
 
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     // Add axis button
@@ -79,10 +75,13 @@ pub fn build_puzzle_params_window(app: &mut PuzzleApp, ctx: &egui::Context) {
                     {
                         let mut new_entry = AxisEntry::default();
                         if app.params.lock_cuts
-                            && let Some(first_colat) =
-                                app.params.axes.first().map(|a| a.colatitude_deg)
+                            && let Some(first_colat) = app
+                                .params
+                                .axes
+                                .first()
+                                .and_then(|a| a.colatitude_deg.degrees())
                         {
-                            new_entry.colatitude_deg = first_colat;
+                            new_entry.colatitude_deg = ColatitudeDeg::Degrees(first_colat);
                         }
                         app.params.axes.push(new_entry);
                         changed = true;
@@ -102,6 +101,17 @@ pub fn build_puzzle_params_window(app: &mut PuzzleApp, ctx: &egui::Context) {
             let mut swap_up: Option<usize> = None;
 
             changed |= app.sync_n_match();
+
+            // Index 0 is never MergeUp. If it became one, keep the resolved degrees.
+            if app
+                .params
+                .axes
+                .first()
+                .is_some_and(|a| a.colatitude_deg.is_merge_up())
+            {
+                AxisEntry::materialize_colatitude(&mut app.params.axes, 0);
+                changed = true;
+            }
 
             // Vertical scroll
             egui::ScrollArea::vertical().show(ui, |ui| {
@@ -254,33 +264,51 @@ pub fn build_puzzle_params_window(app: &mut PuzzleApp, ctx: &egui::Context) {
                     });
 
                     ui.horizontal(|ui| {
-                        // Colat slider
-                        ui.add_enabled_ui(!app.params.lock_cuts || idx == 0, |ui| {
+                        let merge_up = app.params.axes[idx].colatitude_deg.is_merge_up();
+                        let resolved = AxisEntry::resolved_colatitude_deg(&app.params.axes, idx);
+                        // Lock-cuts and MergeUp both freeze the slider. The link button stays active
+                        // during lock-cuts so chains can still be edited.
+                        let slider_enabled = !merge_up && (!app.params.lock_cuts || idx == 0);
+
+                        ui.add_enabled_ui(slider_enabled, |ui| {
+                            let mut value = match app.params.axes[idx].colatitude_deg {
+                                ColatitudeDeg::Degrees(v) => v,
+                                ColatitudeDeg::MergeUp => resolved,
+                            };
                             if ui
                                 .add(
-                                    egui::Slider::new(
-                                        &mut app.params.axes[idx].colatitude_deg,
-                                        MIN_COLAT..=MAX_COLAT,
-                                    )
-                                    .smallest_positive(COLAT_STEP)
-                                    .fixed_decimals(COLAT_DECIMALS)
-                                    .step_by(COLAT_STEP)
-                                    .drag_value_speed(COLAT_SPEED)
-                                    .show_value(true)
-                                    .trailing_fill(true),
+                                    egui::Slider::new(&mut value, MIN_COLAT..=MAX_COLAT)
+                                        .smallest_positive(COLAT_STEP)
+                                        .fixed_decimals(COLAT_DECIMALS)
+                                        .step_by(COLAT_STEP)
+                                        .drag_value_speed(COLAT_SPEED)
+                                        .show_value(true)
+                                        .trailing_fill(true),
                                 )
                                 .changed()
                             {
+                                app.params.axes[idx].colatitude_deg = ColatitudeDeg::Degrees(value);
                                 if app.params.lock_cuts {
-                                    // Sync all colats from this slider
-                                    let new_colat = app.params.axes[idx].colatitude_deg;
-                                    for entry in &mut app.params.axes {
-                                        entry.colatitude_deg = new_colat;
-                                    }
+                                    AxisEntry::unify_concrete_colatitudes(&mut app.params.axes);
                                 }
                                 changed = true;
                             }
                         });
+
+                        // Hidden on the top axis, which must store a real colatitude.
+                        if idx > 0
+                            && ui
+                                .add(Button::new("🔗↑").selected(merge_up))
+                                .on_hover_text("Use the colatitude of the axis above")
+                                .clicked()
+                        {
+                            app.params.axes[idx].colatitude_deg = if merge_up {
+                                ColatitudeDeg::Degrees(resolved)
+                            } else {
+                                ColatitudeDeg::MergeUp
+                            };
+                            changed = true;
+                        }
 
                         // Reorder buttons
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -299,11 +327,11 @@ pub fn build_puzzle_params_window(app: &mut PuzzleApp, ctx: &egui::Context) {
             });
 
             if let Some(idx) = swap_up {
-                app.params.axes.swap(idx - 1, idx);
+                AxisEntry::move_up(&mut app.params.axes, idx);
                 changed = true;
             }
             if let Some(idx) = to_remove {
-                app.params.axes.remove(idx);
+                AxisEntry::remove_at(&mut app.params.axes, idx);
                 changed = true;
             }
 

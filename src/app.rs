@@ -28,8 +28,8 @@ use crate::three::{
     SpriteMaterial, Vector3, WebGLRenderer,
 };
 use crate::types::{
-    AxisDefinitions, InvertAxisAngleWindowState, MeasureAxisAngleWindowState, OrbitAnalysisState,
-    PuzzleParams, WindowState,
+    AxisDefinitions, AxisEntry, InvertAxisAngleWindowState, MeasureAxisAngleWindowState,
+    OrbitAnalysisState, PuzzleParams, WindowState,
 };
 use crate::worker::{GeometryResult, OrbitResult, PolyLine, WorkerMessage, WorkerResponse};
 
@@ -832,7 +832,7 @@ impl PuzzleApp {
 
     pub(crate) fn build_axes(&self) -> Vec<Option<AxisDef>> {
         let mut axes = Vec::new();
-        for entry in &self.params.axes {
+        for (idx, entry) in self.params.axes.iter().enumerate() {
             if !entry.enabled {
                 axes.push(None);
                 continue;
@@ -843,7 +843,7 @@ impl PuzzleApp {
             if let Some(dir) = direction {
                 let d = dir.normalize();
                 axes.push(Some(AxisDef {
-                    colat: entry.colatitude_deg,
+                    colat: AxisEntry::resolved_colatitude_deg(&self.params.axes, idx),
                     direction: [d.x, d.y, d.z],
                     n: entry.n,
                 }));
